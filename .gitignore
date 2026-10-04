@@ -35,3 +35,6 @@ deps-cache/
 # OS
 Thumbs.db
 desktop.ini
+
+# Local checkout of the "notes" branch (kept off main)
+/notes/
