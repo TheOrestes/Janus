@@ -7,7 +7,7 @@ Check items off as they're done; leave open otherwise. Updated as we go.
 
 - [x] A1 — Build skeleton (CMake produces an empty exe)
 - [x] A2 — Logging + assertions (spdlog, `JN_LOG_*`, `JN_CHECK_*`/`JN_ASSERT_*`)
-- [ ] A3 — Window + input (GLFW, semantic `InputAction`)
+- [x] A3 — Window + input (GLFW, semantic `InputAction`)
 - [ ] A4 — Math conventions (handedness, row/col-major, `mul` order — write to header comment)
 - [ ] A5 — Filesystem/assets (exe-relative resolution)
 
@@ -27,6 +27,20 @@ Check items off as they're done; leave open otherwise. Updated as we go.
 - [ ] B12 — Model loading (Assimp)
 - [ ] B13 — Scene + draw list
 - [ ] B14 — Hot reload + debug names
+
+### Phase B globals plan (decided 2026-10-10, from the old CORE pattern)
+
+- D3D12 core objects are namespace-scope globals in `Janus/src/RHI/D3D12/`
+  (namespace `JN::D3D12::Core`). Only here, never in `Core/` (§6.2).
+- Naming: `G_` + type prefix (`G_pDevice`), `G_arr...` for std::array. Getters
+  are plain `inline`; no `constexpr`, no `const` on returned pointers.
+- Added step by step, not up front:
+  B1 `G_pFactory`, `G_pDebug`, `G_pDevice` | B2 `G_pCommandQueue`, `G_pSwapchain`
+  B3 per-frame allocators + command lists (`G_arr...`), ONE fence + monotonic
+  value (§11.2), not the old per-frame fence array | B9 `G_pDescriptorHeap`
+- No `UT::GLOBALS`-style bag: window size, frame id, paths are owned or passed
+  explicitly (Window, renderer), never global.
+- Phase C (C2/C3): these move into `RHIDevice`, which owns them behind the seam.
 
 ## Phase C — Extract the RHI (D3D12-only)
 
@@ -73,4 +87,4 @@ Check items off as they're done; leave open otherwise. Updated as we go.
 - [ ] 10.5 — D3D12 Agility SDK vendoring/deployment plan
 - [x] 10.6 — Engine packaging: **static library (`janus.lib`)**, no DLL (2026-08-22)
 - [x] 10.7 — Naming conventions: `JN::` namespace, `JN_` macros, `Janus`/`Sandbox` targets (2026-08-22; namespace changed from `jn` to `JN` 2026-10-04)
-- [ ] Minor: member prefix — recommendation is plain `m_` (drop `m_p` Hungarian) — decide in A2, then never revisit
+- [x] Minor: member prefix — **typed prefixes** (2026-10-10): `m_p` pointer, `m_b` bool, `m_i`/`m_ui` ints, `m_f` float, `m_d` double, `m_str` string, `m_vec` vector, `m_up`/`m_sp` smart pointers; plain `m_` for references, ComPtr, enums, structs, handles; `G_` for globals and static members
