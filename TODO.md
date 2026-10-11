@@ -9,7 +9,7 @@ Check items off as they're done; leave open otherwise. Updated as we go.
 - [x] A2 — Logging + assertions (spdlog, `JN_LOG_*`, `JN_CHECK_*`/`JN_ASSERT_*`)
 - [x] A3 — Window + input (GLFW, semantic `InputAction`)
 - [x] A4 — Math conventions (handedness, row/col-major, `mul` order — write to header comment)
-- [ ] A5 — Filesystem/assets (exe-relative resolution)
+- [x] A5 — Filesystem/assets (exe-relative resolution)
 
 ## Phase B — D3D12 bring-up (raw, no RHI)
 
