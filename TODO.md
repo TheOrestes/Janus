@@ -8,7 +8,7 @@ Check items off as they're done; leave open otherwise. Updated as we go.
 - [x] A1 — Build skeleton (CMake produces an empty exe)
 - [x] A2 — Logging + assertions (spdlog, `JN_LOG_*`, `JN_CHECK_*`/`JN_ASSERT_*`)
 - [x] A3 — Window + input (GLFW, semantic `InputAction`)
-- [ ] A4 — Math conventions (handedness, row/col-major, `mul` order — write to header comment)
+- [x] A4 — Math conventions (handedness, row/col-major, `mul` order — write to header comment)
 - [ ] A5 — Filesystem/assets (exe-relative resolution)
 
 ## Phase B — D3D12 bring-up (raw, no RHI)
@@ -81,10 +81,12 @@ Check items off as they're done; leave open otherwise. Updated as we go.
 ## Open decisions (§10)
 
 - [ ] 10.1 — Shader strategy: does `ResourceDescriptorHeap[i]` map cleanly to SPIR-V in the DXC version used? (verify empirically before D6, investigate during B5). Also: runtime-only compile, or offline + hot-reload?
-- [x] 10.2 — Math library: **DirectXMath** (2026-08-22). Handedness/major-order/`mul` order still to be pinned in A4.
+- [x] 10.2 — Math library: **DirectXMath** (2026-08-22). Pinned in `Core/Math.h` (2026-10-11): LH, Y up, +Z forward, row vectors `v*M`, row-major, UV top-left, depth 0..1.
 - [x] 10.3 — Build system: **CMake** (2026-08-22)
 - [x] 10.4 — Dependency management: **CMake `FetchContent`** (2026-08-22)
 - [ ] 10.5 — D3D12 Agility SDK vendoring/deployment plan
 - [x] 10.6 — Engine packaging: **static library (`janus.lib`)**, no DLL (2026-08-22)
 - [x] 10.7 — Naming conventions: `JN::` namespace, `JN_` macros, `Janus`/`Sandbox` targets (2026-08-22; namespace changed from `jn` to `JN` 2026-10-04)
 - [x] Minor: member prefix — **typed prefixes** (2026-10-10): `m_p` pointer, `m_b` bool, `m_i`/`m_ui` ints, `m_f` float, `m_d` double, `m_str` string, `m_vec` vector, `m_up`/`m_sp` smart pointers; plain `m_` for references, ComPtr, enums, structs, handles; `G_` for globals and static members
+- [ ] Reminder (D6): Vulkan flips Y with a negative viewport height; the world stays LH (see `Core/Math.h`)
+- [ ] Reminder (B12): Assimp probably needs `aiProcess_ConvertToLeftHanded` for glTF models; verify A/D direction empirically
