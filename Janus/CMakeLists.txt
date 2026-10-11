@@ -3,6 +3,8 @@
 # Headers are listed too, only so they show up in Visual Studio's Solution
 # Explorer; the compiler finds them through #include regardless.
 add_library(Janus STATIC
+    src/Core/FileSystem.h
+    src/Core/FileSystem.cpp
     src/Core/Log.h
     src/Core/Log.cpp
     src/Core/Window.h

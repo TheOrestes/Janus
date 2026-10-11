@@ -5,6 +5,7 @@
 
 namespace JN
 {
+    //-----------------------------------------------------------------------------------------------------------------
     static int ToKey(InputAction action)
     {
         switch (action)
@@ -18,6 +19,7 @@ namespace JN
         return GLFW_KEY_UNKNOWN;
     }
 
+    //-----------------------------------------------------------------------------------------------------------------
     bool IsActionDown(const Window& window, InputAction action)
     {
         return glfwGetKey(window.GetHandle(), ToKey(action)) == GLFW_PRESS;
