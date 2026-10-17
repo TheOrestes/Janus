@@ -2,6 +2,7 @@
 #include "Core/Input.h"
 #include "Core/Log.h"
 #include "Core/Window.h"
+#include "RHI/D3D12/Core.h"
 
 int main()
 {
@@ -9,6 +10,8 @@ int main()
 
     JN::Window window(1280, 720, "Janus");
     JN_LOG_INFO("Window created");
+
+    JN::D3D12::Core::Init();
 
     JN_LOG_INFO("Exe dir: {}", JN::GetExecutableDirectory().string());
 
@@ -32,6 +35,8 @@ int main()
             JN_LOG_DEBUG("MoveForward");
         }
     }
+
+    JN::D3D12::Core::Shutdown();
 
     return 0;
 }

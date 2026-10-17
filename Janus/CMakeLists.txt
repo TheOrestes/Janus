@@ -11,7 +11,10 @@ add_library(Janus STATIC
     src/Core/Window.cpp
     src/Core/Input.h
     src/Core/Input.cpp
-    src/Core/Math.h)
+    src/Core/Math.h
+    src/RHI/D3D12/D3D12Common.h
+    src/RHI/D3D12/Core.h
+    src/RHI/D3D12/Core.cpp)
 
 # Show the files in Solution Explorer as the folder tree on disk (Core/...)
 # instead of one flat list. The tree is rooted at src/, so Core/Log.h appears
@@ -30,3 +33,7 @@ target_link_libraries(Janus PUBLIC spdlog::spdlog)
 # includes glfw3.h, so Sandbox never sees it. Being a static library, the final
 # exe still gets GLFW linked in automatically.
 target_link_libraries(Janus PRIVATE glfw)
+
+# PRIVATE: D3D12 and DXGI come from the Windows SDK, so there is nothing to
+# fetch. Only the RHI/D3D12 sources use them; Sandbox never sees d3d12.h.
+target_link_libraries(Janus PRIVATE d3d12 dxgi)
