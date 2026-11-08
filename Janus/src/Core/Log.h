@@ -8,14 +8,24 @@
 
 namespace JN
 {
+    extern spdlog::logger* G_pEngineLogger;
+    extern spdlog::logger* G_pAppLogger;
+    extern spdlog::logger* G_pD3D12Logger;
+
     void LogInit();
 }
 
-#define JN_LOG_DEBUG(...) SPDLOG_TRACE(__VA_ARGS__)
-#define JN_LOG_INFO(...)  SPDLOG_INFO(__VA_ARGS__)
-#define JN_LOG_WARN(...)  SPDLOG_WARN(__VA_ARGS__)
-#define JN_LOG_ERROR(...) SPDLOG_ERROR(__VA_ARGS__)
-#define JN_LOG_FATAL(...) SPDLOG_CRITICAL(__VA_ARGS__)
+#define JN_LOG_DEBUG(...) SPDLOG_LOGGER_TRACE(JN::G_pEngineLogger, __VA_ARGS__)
+#define JN_LOG_INFO(...)  SPDLOG_LOGGER_INFO(JN::G_pEngineLogger, __VA_ARGS__)
+#define JN_LOG_WARN(...)  SPDLOG_LOGGER_WARN(JN::G_pEngineLogger, __VA_ARGS__)
+#define JN_LOG_ERROR(...) SPDLOG_LOGGER_ERROR(JN::G_pEngineLogger, __VA_ARGS__)
+#define JN_LOG_FATAL(...) SPDLOG_LOGGER_CRITICAL(JN::G_pEngineLogger, __VA_ARGS__)
+
+#define APP_LOG_DEBUG(...) SPDLOG_LOGGER_TRACE(JN::G_pAppLogger, __VA_ARGS__)
+#define APP_LOG_INFO(...)  SPDLOG_LOGGER_INFO(JN::G_pAppLogger, __VA_ARGS__)
+#define APP_LOG_WARN(...)  SPDLOG_LOGGER_WARN(JN::G_pAppLogger, __VA_ARGS__)
+#define APP_LOG_ERROR(...) SPDLOG_LOGGER_ERROR(JN::G_pAppLogger, __VA_ARGS__)
+#define APP_LOG_FATAL(...) SPDLOG_LOGGER_CRITICAL(JN::G_pAppLogger, __VA_ARGS__)
 
 // Always on. Logs, then breaks into the debugger.
 #define JN_CHECK(cond, ...)                          \
