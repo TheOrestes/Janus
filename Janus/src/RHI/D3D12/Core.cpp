@@ -8,6 +8,8 @@ namespace JN::D3D12::Core
     ID3D12Debug1*  G_pDebug   = nullptr;
     ID3D12Device*  G_pDevice  = nullptr;
 
+    static DWORD   G_uiMessageCookie = 0; // handle for UnregisterMessageCallback
+
     //-----------------------------------------------------------------------------------------------------------------
     static void EnableDebugLayer()
     {
@@ -46,6 +48,43 @@ namespace JN::D3D12::Core
     }
 
     //-----------------------------------------------------------------------------------------------------------------
+    static void CALLBACK OnD3D12Message(D3D12_MESSAGE_CATEGORY, D3D12_MESSAGE_SEVERITY severity,
+                                        D3D12_MESSAGE_ID, LPCSTR pDescription, void*)
+    {
+        spdlog::level::level_enum level = spdlog::level::debug;
+        switch (severity)
+        {
+            case D3D12_MESSAGE_SEVERITY_CORRUPTION: level = spdlog::level::critical; break;
+            case D3D12_MESSAGE_SEVERITY_ERROR:      level = spdlog::level::err;      break;
+            case D3D12_MESSAGE_SEVERITY_WARNING:    level = spdlog::level::warn;     break;
+            case D3D12_MESSAGE_SEVERITY_INFO:       level = spdlog::level::info;     break;
+            default:                                break;
+        }
+        G_pD3D12Logger->log(level, "{}", pDescription);
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    static void RouteDebugMessagesToLogger()
+    {
+        ID3D12InfoQueue1* pQueue = nullptr;
+        JN_CHECK_HRESULT(G_pDevice->QueryInterface(IID_PPV_ARGS(&pQueue)));
+        JN_CHECK_HRESULT(pQueue->RegisterMessageCallback(
+            OnD3D12Message, D3D12_MESSAGE_CALLBACK_FLAG_NONE, nullptr, &G_uiMessageCookie));
+        SafeRelease(pQueue);
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    static void RequireEnhancedBarriers()
+    {
+        D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12 = {};
+        JN_CHECK_HRESULT(G_pDevice->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12)));
+        JN_CHECK(options12.EnhancedBarriersSupported,
+                 "Enhanced Barriers not supported: check the Agility SDK export/D3D12 folder and the GPU driver");
+        JN_LOG_INFO("Enhanced Barriers: supported");
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
     void Init()
     {
         EnableDebugLayer();
@@ -56,6 +95,8 @@ namespace JN::D3D12::Core
         IDXGIAdapter1* pAdapter = PickAdapter();
         JN_CHECK_HRESULT(D3D12CreateDevice(pAdapter, D3D_FEATURE_LEVEL_12_0,
                                            IID_PPV_ARGS(&G_pDevice)));
+        RouteDebugMessagesToLogger();
+        RequireEnhancedBarriers();
         EnableBreakOnError();
         SafeRelease(pAdapter);
     }
@@ -69,6 +110,13 @@ namespace JN::D3D12::Core
             pDebugDevice->ReportLiveDeviceObjects(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL);
         }
         SafeRelease(pDebugDevice);
+
+        ID3D12InfoQueue1* pQueue = nullptr;
+        if (SUCCEEDED(G_pDevice->QueryInterface(IID_PPV_ARGS(&pQueue))))
+        {
+            pQueue->UnregisterMessageCallback(G_uiMessageCookie);
+        }
+        SafeRelease(pQueue);
 
         SafeRelease(G_pDevice);
         SafeRelease(G_pFactory);

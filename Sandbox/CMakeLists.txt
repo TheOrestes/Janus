@@ -17,3 +17,14 @@ add_custom_command(TARGET Sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_CURRENT_SOURCE_DIR}/Assets
             $<TARGET_FILE_DIR:Sandbox>/Assets)
+
+# Agility SDK runtime goes in D3D12/ beside the exe, where D3D12SDKPath will
+# point. The debug layer DLL must come from the same package or the debug
+# layer fails to load.
+# copy_if_different does not create the destination folder, so make it first.
+add_custom_command(TARGET Sandbox POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Sandbox>/D3D12
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${agility_SOURCE_DIR}/build/native/bin/x64/D3D12Core.dll
+            ${agility_SOURCE_DIR}/build/native/bin/x64/d3d12SDKLayers.dll
+            $<TARGET_FILE_DIR:Sandbox>/D3D12)

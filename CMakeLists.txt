@@ -30,6 +30,16 @@ FetchContent_Declare(glfw
     GIT_SHALLOW    TRUE)
 FetchContent_MakeAvailable(glfw) # provides the glfw target
 
+# Agility SDK (decision 10.5): a NuGet package is just a zip, so it is fetched
+# at configure time like the other deps. 1.620.1 ships SDK version 620; that
+# number must match the D3D12SDKVersion export in the exe.
+# DOWNLOAD_NAME forces a .zip extension so CMake unpacks it.
+FetchContent_Declare(agility
+    URL           https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.620.1
+    DOWNLOAD_NAME agility.zip)
+FetchContent_MakeAvailable(agility)
+# Not a CMake project, so only agility_SOURCE_DIR is defined, no target.
+
 # Order matters: Sandbox links against Janus, so Janus must be defined first.
 add_subdirectory(Janus)   # the engine, built as a static library
 add_subdirectory(Sandbox) # the test application
