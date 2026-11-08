@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<title>B2b Enhanced Barriers</title>
+<style>
+:root{--bg:#0f1115;--fg:#e5e7eb;--dim:#9ca3af;--card:#171a21;--line:#2a2f3a;--acc:#c7d2fe;--code:#1e222b}
+@media (prefers-color-scheme:light){:root{--bg:#f6f7f9;--fg:#1f2937;--dim:#6b7280;--card:#ffffff;--line:#d9dde4;--acc:#3730a3;--code:#eef0f4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.65 Inter,system-ui,sans-serif}
+main{max-width:984px;margin:0 auto;padding:32px 16px 64px}
+h1,h2,h3,th,.fh,.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif}
+h3{font-size:1.05rem;margin:1.6rem 0 .4rem}
+ol{padding-left:1.4rem}
+h1{font-size:1.8rem;margin:0 0 4px}
+h2{font-size:1.25rem;margin:2.4rem 0 .6rem;color:var(--acc);border-bottom:1px solid var(--line);padding-bottom:6px}
+.sub{color:var(--dim);margin:0 0 24px}
+code{background:var(--code);padding:1px 6px;border-radius:4px;font:.9em ui-monospace,Consolas,monospace}
+ul{padding-left:1.2rem}li{margin:.35rem 0}
+figure{margin:20px 0;background:#12151b;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto}
+figure svg{display:block;width:100%;min-width:560px;height:auto}
+figcaption{color:#9ca3af;font-size:.85rem;margin-top:8px}
+table{border-collapse:collapse;width:100%;margin:12px 0;background:var(--card);border:1px solid var(--line)}
+th,td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--acc);font-weight:600}
+.math{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:6px;padding:10px 14px;margin:12px 0;font:.95em ui-monospace,Consolas,monospace;overflow-x:auto;white-space:pre}
+.fs{position:sticky;top:8px;float:right;display:flex;gap:6px;z-index:5}
+.fs button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font:600 .9rem 'Space Grotesk',Inter,sans-serif;cursor:pointer}
+.fs button:hover{border-color:var(--acc)}
+</style>
+</head>
+<body>
+<main>
+<div class="fs" role="group" aria-label="Font size"><button id="fsm" aria-label="Decrease font size">A-</button><button id="fsp" aria-label="Increase font size">A+</button></div>
+<h1>B2b: Barriers (Enhanced Barriers)</h1>
+<p class="sub">Janus learning notes. Why barriers exist, what the three fields mean, and the Agility SDK needed to use them.</p>
+
+<h2>1. Why a barrier exists at all</h2>
+<ul>
+<li>The GPU is not one processor reading one memory. It is many units (raster, shader cores, copy engines, display) with their own <b>caches</b>, running <b>in parallel</b> and often <b>out of order</b>.</li>
+<li>Submitting command A then command B does not mean B starts after A finishes. Without a rule, B can start while A is still writing.</li>
+<li>A barrier is that rule. It tells the driver three separate things, and mixing them up is the usual source of confusion.</li>
+</ul>
+<table>
+<tr><th>Question</th><th>Concern</th><th>What the hardware does</th></tr>
+<tr><td>When may the later work start?</td><td><b>Scheduling</b> (sync)</td><td>Stalls the later stage until the earlier stage has finished</td></tr>
+<tr><td>Whose writes must the later work see?</td><td><b>Caches</b> (access)</td><td>Flushes the writer's cache, invalidates the reader's cache</td></tr>
+<tr><td>How are the texels arranged in memory?</td><td><b>Layout</b></td><td>May decompress or re-tile the texture (for example color compression used by the render target path but not by the display engine)</td></tr>
+</table>
+<p>The third row is why textures need more than a fence. The same bytes can be stored in different internal formats depending on who will use them next. Presenting needs a plain layout the display engine can scan out; rendering is happy with a compressed, tiled one.</p>
+
+<h2>2. Legacy states versus Enhanced Barriers</h2>
+<p>Legacy D3D12 had one combined idea: <code>D3D12_RESOURCE_STATES</code>. A single value such as <code>RENDER_TARGET</code> meant sync, cache and layout all at once, and the driver guessed the rest.</p>
+<table>
+<tr><th></th><th>Legacy</th><th>Enhanced</th></tr>
+<tr><td>Vocabulary</td><td>One state enum</td><td>Separate sync, access and layout fields</td></tr>
+<tr><td>Command</td><td><code>ResourceBarrier</code></td><td><code>Barrier</code> (command list 7+)</td></tr>
+<tr><td>Precision</td><td>Driver infers the stages and caches involved, often over-syncing</td><td>You state the exact stages and accesses</td></tr>
+<tr><td>Vulkan mapping</td><td>Lossy</td><td>Close to 1:1 with <code>VkDependencyInfo</code></td></tr>
+</table>
+<p>Janus targets Vulkan later, so it uses Enhanced Barriers from the start. The three fields map directly:</p>
+<table>
+<tr><th>D3D12 Enhanced</th><th>Vulkan 1.3</th></tr>
+<tr><td><code>SyncBefore</code> / <code>SyncAfter</code></td><td><code>srcStageMask</code> / <code>dstStageMask</code></td></tr>
+<tr><td><code>AccessBefore</code> / <code>AccessAfter</code></td><td><code>srcAccessMask</code> / <code>dstAccessMask</code></td></tr>
+<tr><td><code>LayoutBefore</code> / <code>LayoutAfter</code></td><td><code>oldLayout</code> / <code>newLayout</code></td></tr>
+</table>
+
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 270" width="760" height="270" role="img" aria-label="A barrier sits between earlier work and later work. It controls scheduling, cache visibility and layout.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>
+.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+</style>
+<text class="ttl" x="20" y="24">One barrier, three jobs</text>
+<rect x="20" y="60" width="190" height="70" rx="6" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/>
+<text class="lbl" x="115" y="90" text-anchor="middle">Earlier work</text>
+<text class="dim" x="115" y="108" text-anchor="middle">e.g. clear the render target</text>
+<rect x="550" y="60" width="190" height="70" rx="6" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/>
+<text class="lbl" x="645" y="90" text-anchor="middle">Later work</text>
+<text class="dim" x="645" y="108" text-anchor="middle">e.g. present to the display</text>
+<line x1="380" y1="48" x2="380" y2="150" stroke="#f87171" stroke-width="3"/>
+<text class="lbl" x="380" y="44" text-anchor="middle" fill="#f87171" style="fill:#f87171">BARRIER</text>
+<line x1="212" y1="95" x2="378" y2="95" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="382" y1="95" x2="548" y2="95" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#a)"/>
+<text class="lbl" x="20" y="182">1. Sync</text><text class="dim" x="100" y="182">later stage waits for the earlier stage to finish</text>
+<text class="lbl" x="20" y="206">2. Access</text><text class="dim" x="100" y="206">earlier writes flushed from cache, later cache invalidated</text>
+<text class="lbl" x="20" y="230">3. Layout</text><text class="dim" x="100" y="230">texture memory rearranged for the next user (texture barriers only)</text>
+<text class="dim" x="20" y="254">A buffer has no layout, so only textures carry the third field.</text>
+</svg><figcaption>Sync controls when, access controls what is visible, layout controls how the bytes are arranged.</figcaption></figure>
+
+<h2>3. The three barrier types</h2>
+<p>Barriers are submitted in groups, one group per type, in a single <code>Barrier(numGroups, groups)</code> call on <code>ID3D12GraphicsCommandList7</code>.</p>
+<table>
+<tr><th>Type</th><th>Struct</th><th>Targets</th><th>Has layout?</th></tr>
+<tr><td>Global</td><td><code>D3D12_GLOBAL_BARRIER</code></td><td>All memory, no specific resource</td><td>No</td></tr>
+<tr><td>Buffer</td><td><code>D3D12_BUFFER_BARRIER</code></td><td>One buffer</td><td>No</td></tr>
+<tr><td>Texture</td><td><code>D3D12_TEXTURE_BARRIER</code></td><td>One texture and a subresource range</td><td><b>Yes</b></td></tr>
+</table>
+<p>Swapchain back buffers are textures, so B2 uses only texture barriers.</p>
+
+<h3>The texture barrier fields</h3>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><code>SyncBefore</code>, <code>SyncAfter</code></td><td>Which pipeline stages must finish before / may start after, for example <code>RENDER_TARGET</code> or <code>ALL</code>. <code>NONE</code> means nothing to wait for or nothing waits.</td></tr>
+<tr><td><code>AccessBefore</code>, <code>AccessAfter</code></td><td>How the texture was / will be touched, for example <code>RENDER_TARGET</code>. <code>NO_ACCESS</code> means untouched on that side.</td></tr>
+<tr><td><code>LayoutBefore</code>, <code>LayoutAfter</code></td><td>The layout it is in now and the layout it must be in next, for example <code>PRESENT</code> then <code>RENDER_TARGET</code>.</td></tr>
+<tr><td><code>pResource</code>, <code>Subresources</code></td><td>Which texture, and which mips/slices. A back buffer has one subresource.</td></tr>
+<tr><td><code>Flags</code></td><td>Optional <code>DISCARD</code>: the old contents are not needed, so no data needs preserving during the layout change.</td></tr>
+</table>
+<p>The rule of thumb: <b>Before</b> describes the previous user, <b>After</b> describes the next user. Get them reversed and you get hazards the debug layer will flag.</p>
+
+<h2>4. The swapchain example</h2>
+<p>Each frame the back buffer is used twice, by two different "users": the renderer and the display. Each handoff is one barrier.</p>
+<table>
+<tr><th>Barrier</th><th>Sync</th><th>Access</th><th>Layout</th></tr>
+<tr><td><b>Before drawing</b></td><td><code>NONE</code> to <code>RENDER_TARGET</code></td><td><code>NO_ACCESS</code> to <code>RENDER_TARGET</code></td><td><code>PRESENT</code> to <code>RENDER_TARGET</code></td></tr>
+<tr><td><b>Before present</b></td><td><code>RENDER_TARGET</code> to <code>NONE</code></td><td><code>RENDER_TARGET</code> to <code>NO_ACCESS</code></td><td><code>RENDER_TARGET</code> to <code>PRESENT</code></td></tr>
+</table>
+<ul>
+<li>Back buffers are created in the <code>PRESENT</code> layout, so the first barrier of the first frame is already correct.</li>
+<li>Sync <code>NONE</code> on the "present" side: <code>Present</code> is not a command-list stage. The ordering with the display is handled by the swapchain itself, so the barrier only has to make the render target writes finished and the layout correct.</li>
+<li>The Present-time barrier is what flushes the render target cache and puts the texture in the display-friendly layout.</li>
+</ul>
+
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="The back buffer layout over one frame: PRESENT, barrier, RENDER_TARGET while clearing, barrier, PRESENT.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>
+.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+.red{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#f87171}
+</style>
+<text class="ttl" x="20" y="24">One back buffer, one frame</text>
+<rect x="20" y="70" width="160" height="56" rx="6" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/>
+<text class="lbl" x="100" y="94" text-anchor="middle">layout: PRESENT</text><text class="dim" x="100" y="112" text-anchor="middle">display-readable</text>
+<rect x="300" y="70" width="170" height="56" rx="6" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/>
+<text class="lbl" x="385" y="94" text-anchor="middle">layout: RENDER_TARGET</text><text class="dim" x="385" y="112" text-anchor="middle">Clear / Draw here</text>
+<rect x="590" y="70" width="150" height="56" rx="6" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/>
+<text class="lbl" x="665" y="94" text-anchor="middle">layout: PRESENT</text><text class="dim" x="665" y="112" text-anchor="middle">Present() now</text>
+<line x1="182" y1="98" x2="298" y2="98" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#a)"/>
+<line x1="472" y1="98" x2="588" y2="98" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#a)"/>
+<text class="red" x="240" y="62" text-anchor="middle">barrier 1</text>
+<text class="red" x="530" y="62" text-anchor="middle">barrier 2</text>
+<text class="dim" x="240" y="152" text-anchor="middle">NONE / NO_ACCESS</text><text class="dim" x="240" y="168" text-anchor="middle">to RENDER_TARGET</text>
+<text class="dim" x="530" y="152" text-anchor="middle">RENDER_TARGET</text><text class="dim" x="530" y="168" text-anchor="middle">to NONE / NO_ACCESS</text>
+<text class="dim" x="20" y="214">Skip barrier 1 and the GPU writes into a layout meant for scanout. Skip barrier 2 and the display may read an unflushed cache.</text>
+<text class="dim" x="20" y="232">The debug layer and GBV catch both.</text>
+</svg><figcaption>Every use change of a texture is a barrier, even when the memory does not move.</figcaption></figure>
+
+<h2>5. The Agility SDK</h2>
+<ul>
+<li>Enhanced Barriers are not in the D3D12 runtime that ships with Windows. They come from the <b>Agility SDK</b>, a side-by-side runtime (<code>D3D12Core.dll</code>) that your exe can load instead of the system one.</li>
+<li>Reason: new D3D12 features can ship without waiting for a Windows update. The cost is a few deployment rules.</li>
+</ul>
+<h3>Deployment rules</h3>
+<ol>
+<li>Get the NuGet package <code>Microsoft.Direct3D.D3D12</code> (a zip). Use a version that includes Enhanced Barriers (1.608 or later).</li>
+<li>Copy <code>D3D12Core.dll</code> and <code>d3d12SDKLayers.dll</code> (debug layer) into a <code>D3D12\</code> folder <b>next to the exe</b>.</li>
+<li>Export two symbols from the exe so the loader knows which runtime to pick:</li>
+</ol>
+<div class="math">extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = &lt;sdk version&gt;; }
+extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }</div>
+<ol start="4">
+<li>The version number must match the package exactly. A mismatch makes <code>D3D12CreateDevice</code> fail or silently use the system runtime.</li>
+<li>Even with the SDK, the GPU driver must support Enhanced Barriers. Query it at startup:</li>
+</ol>
+<div class="math">D3D12_FEATURE_DATA_D3D12_OPTIONS12 o12 = {};
+device-&gt;CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &amp;o12, sizeof(o12));
+// o12.EnhancedBarriersSupported must be TRUE</div>
+<p>Janus handles this like the assets: a CMake post-build step copies the DLLs into <code>D3D12\</code> beside the exe, and the two exports live in the Sandbox (or the RHI) translation unit.</p>
+
+<h2>6. What B2b builds</h2>
+<ul>
+<li>Vendor the Agility SDK and wire the CMake copy step.</li>
+<li>Add the two exports; verify <code>EnhancedBarriersSupported</code> and log it.</li>
+<li>Query <code>ID3D12GraphicsCommandList7</code> and write a small helper that emits a texture barrier for the back buffer.</li>
+<li>Used for real in B2c: PRESENT to RENDER_TARGET, clear, RENDER_TARGET to PRESENT.</li>
+</ul>
+</main>
+<script>
+(function(){
+var k='janusFontPx',px=16,r=document.documentElement;
+try{px=+localStorage.getItem(k)||16}catch(e){}
+function set(v){px=Math.max(12,Math.min(26,v));r.style.fontSize=px+'px';try{localStorage.setItem(k,px)}catch(e){}}
+set(px);
+document.getElementById('fsm').onclick=function(){set(px-1)};
+document.getElementById('fsp').onclick=function(){set(px+1)};
+})();
+</script>
+</body>
+</html>

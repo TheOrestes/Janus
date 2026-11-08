@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="An RTV descriptor heap with three slots. Each slot is a descriptor that points to one swapchain back buffer. The handle for slot i is the heap start plus i times the descriptor increment size.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>
+.ttl{font-family:system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;fill:#e5e7eb}
+</style>
+<text class="ttl" x="20" y="24">RTV heap: slots that point at buffers</text>
+<rect x="20" y="46" width="250" height="150" rx="6" fill="none" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text class="dim" x="32" y="64">DescriptorHeap (type RTV, CPU only)</text>
+<rect x="36" y="76" width="218" height="34" rx="4" fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="1.4"/><text class="mono" x="145" y="98" text-anchor="middle">slot 0: RTV</text>
+<rect x="36" y="118" width="218" height="34" rx="4" fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="1.4"/><text class="mono" x="145" y="140" text-anchor="middle">slot 1: RTV</text>
+<rect x="36" y="160" width="218" height="34" rx="4" fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="1.4"/><text class="mono" x="145" y="182" text-anchor="middle">slot 2: RTV</text>
+<line x1="256" y1="93" x2="430" y2="93" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="256" y1="135" x2="430" y2="135" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="256" y1="177" x2="430" y2="177" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="432" y="76" width="200" height="34" rx="4" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="532" y="98" text-anchor="middle">back buffer 0</text>
+<rect x="432" y="118" width="200" height="34" rx="4" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="532" y="140" text-anchor="middle">back buffer 1</text>
+<rect x="432" y="160" width="200" height="34" rx="4" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="532" y="182" text-anchor="middle">back buffer 2</text>
+<text class="mono" x="20" y="222">handle(i) = heapStart + i * GetDescriptorHandleIncrementSize(RTV)</text>
+<text class="dim" x="20" y="240">The increment is chosen by the driver. Never hardcode it.</text>
+</svg>

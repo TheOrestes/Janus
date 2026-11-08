@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<title>B2a Commands, Swapchain, RTVs</title>
+<style>
+:root{--bg:#0f1115;--fg:#e5e7eb;--dim:#9ca3af;--card:#171a21;--line:#2a2f3a;--acc:#c7d2fe;--code:#1e222b}
+@media (prefers-color-scheme:light){:root{--bg:#f6f7f9;--fg:#1f2937;--dim:#6b7280;--card:#ffffff;--line:#d9dde4;--acc:#3730a3;--code:#eef0f4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.65 Inter,system-ui,sans-serif}
+main{max-width:984px;margin:0 auto;padding:32px 16px 64px}
+h1,h2,h3,th,.fh,.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif}
+h3{font-size:1.05rem;margin:1.6rem 0 .4rem}
+ol{padding-left:1.4rem}
+h1{font-size:1.8rem;margin:0 0 4px}
+h2{font-size:1.25rem;margin:2.4rem 0 .6rem;color:var(--acc);border-bottom:1px solid var(--line);padding-bottom:6px}
+.sub{color:var(--dim);margin:0 0 24px}
+code{background:var(--code);padding:1px 6px;border-radius:4px;font:.9em ui-monospace,Consolas,monospace}
+ul{padding-left:1.2rem}li{margin:.35rem 0}
+figure{margin:20px 0;background:#12151b;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto}
+figure svg{display:block;width:100%;min-width:560px;height:auto}
+figcaption{color:#9ca3af;font-size:.85rem;margin-top:8px}
+table{border-collapse:collapse;width:100%;margin:12px 0;background:var(--card);border:1px solid var(--line)}
+th,td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--acc);font-weight:600}
+.math{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:6px;padding:10px 14px;margin:12px 0;font:.95em ui-monospace,Consolas,monospace;overflow-x:auto}
+.fs{position:sticky;top:8px;float:right;display:flex;gap:6px;z-index:5}
+.fs button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font:600 .9rem 'Space Grotesk',Inter,sans-serif;cursor:pointer}
+.fs button:hover{border-color:var(--acc)}
+</style>
+</head>
+<body>
+<main>
+<div class="fs" role="group" aria-label="Font size"><button id="fsm" aria-label="Decrease font size">A-</button><button id="fsp" aria-label="Increase font size">A+</button></div>
+<h1>B2a: Command queues, command lists, swapchain, RTVs</h1>
+<p class="sub">Janus learning notes. Theory, math and diagrams for chapter B2a.</p>
+
+<h2>1. Commands are recorded, not executed</h2>
+<ul>
+<li>The GPU runs asynchronously from the CPU. Calling <code>Draw</code> does not draw; it appends a command to a buffer. Nothing runs until the buffer is submitted to a queue.</li>
+<li>So the CPU records frame N+1 while the GPU executes frame N. The GPU runs behind the CPU by up to the number of frames in flight.</li>
+</ul>
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="CPU and GPU timelines. The CPU records frame N plus 1 while the GPU executes frame N, so the GPU runs one frame behind the CPU.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>
+.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+</style>
+<text class="ttl" x="20" y="24">Two timelines, one frame apart</text>
+<text class="lbl" x="20" y="82">CPU</text>
+<text class="lbl" x="20" y="152">GPU</text>
+<rect x="70" y="58" width="150" height="40" rx="5" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/><text class="lbl" x="145" y="83" text-anchor="middle">record frame 0</text>
+<rect x="230" y="58" width="150" height="40" rx="5" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/><text class="lbl" x="305" y="83" text-anchor="middle">record frame 1</text>
+<rect x="390" y="58" width="150" height="40" rx="5" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/><text class="lbl" x="465" y="83" text-anchor="middle">record frame 2</text>
+<rect x="550" y="58" width="150" height="40" rx="5" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/><text class="lbl" x="625" y="83" text-anchor="middle">record frame 3</text>
+<rect x="230" y="128" width="150" height="40" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="lbl" x="305" y="153" text-anchor="middle">execute frame 0</text>
+<rect x="390" y="128" width="150" height="40" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="lbl" x="465" y="153" text-anchor="middle">execute frame 1</text>
+<rect x="550" y="128" width="150" height="40" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="lbl" x="625" y="153" text-anchor="middle">execute frame 2</text>
+<line x1="145" y1="100" x2="228" y2="126" stroke="#e5e7eb" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a)"/>
+<line x1="305" y1="100" x2="388" y2="126" stroke="#e5e7eb" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a)"/>
+<line x1="465" y1="100" x2="548" y2="126" stroke="#e5e7eb" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a)"/>
+<line x1="70" y1="196" x2="710" y2="196" stroke="#6b7280" stroke-width="1.2" marker-end="url(#a)"/>
+<text class="dim" x="710" y="214" text-anchor="end">time</text>
+<text class="dim" x="20" y="238">Dashed arrows are ExecuteCommandLists. Recording is cheap CPU work; execution happens later, on the GPU clock.</text>
+</svg><figcaption>Recording is cheap CPU work. Execution happens later, on the GPU clock.</figcaption></figure>
+
+<p>The price of this overlap is latency. With F frames in flight, input-to-photon delay grows by about F frame times.</p>
+<div class="math">latency_extra ~= F * (1000 / refresh_hz) ms</div>
+<table>
+<tr><th>Frames in flight (F)</th><th>Extra latency at 60 Hz (16.67 ms/frame)</th></tr>
+<tr><td>1</td><td>about 16.7 ms</td></tr>
+<tr><td>2</td><td>about 33.3 ms</td></tr>
+<tr><td>3</td><td>about 50.0 ms</td></tr>
+</table>
+
+<h2>2. The three command objects</h2>
+<p>Think of a notebook. The <b>allocator</b> is the paper, the <b>list</b> is the pen, and the <b>queue</b> is the door the finished pages go through to reach the GPU.</p>
+<table>
+<tr><th>Object</th><th>Job</th><th>Key calls</th></tr>
+<tr><td><code>ID3D12CommandAllocator</code></td><td>Owns the memory the commands are stored in.</td><td><code>Reset()</code> frees all of it at once</td></tr>
+<tr><td><code>ID3D12GraphicsCommandList</code></td><td>The interface you record through. <code>Draw</code>, <code>ClearRenderTargetView</code> and barriers append to the allocator's memory.</td><td><code>Close()</code> ends recording; <code>Reset(allocator)</code> starts again</td></tr>
+<tr><td><code>ID3D12CommandQueue</code></td><td>Takes closed lists and hands them to the GPU. Also signals fences.</td><td><code>ExecuteCommandLists</code>, <code>Signal</code></td></tr>
+</table>
+<p>A <code>Draw</code> call therefore never touches the queue. It writes bytes into the allocator's memory through the list. The queue only sees the work after you <code>Close()</code> the list and call <code>ExecuteCommandLists</code>.</p>
+
+<h3>The reset rules</h3>
+<ol>
+<li><b>The list</b> may be <code>Reset()</code> as soon as <code>ExecuteCommandLists</code> returns. The queue has already taken what it needs from it.</li>
+<li><b>The allocator</b> may not. Submitting does not mean the GPU has finished. It may still be reading the allocator's memory, and resetting would free that memory under it.</li>
+<li>The allocator is safe to reset only after a <b>fence</b> shows the GPU has finished that frame. The queue signals the fence after the submit; the CPU compares the fence's completed value with the frame's value.</li>
+<li>One allocator can back only one list that is recording at a time.</li>
+</ol>
+
+<h3>How many allocators?</h3>
+<p>One per frame in flight. Each frame records into its own allocator, so recording the next frame never disturbs memory the GPU is still reading.</p>
+<table>
+<tr><th>Frame</th><th>Allocator</th><th>Before reusing it</th></tr>
+<tr><td>0</td><td>A</td><td>(first use)</td></tr>
+<tr><td>1</td><td>B</td><td>(first use)</td></tr>
+<tr><td>2</td><td>A</td><td>wait until the fence says frame 0 is done, then reset A</td></tr>
+<tr><td>3</td><td>B</td><td>wait until the fence says frame 1 is done, then reset B</td></tr>
+</table>
+<p>With 2 frames in flight that is 2 allocators. With 3 frames in flight it is 3.</p>
+<p>The queue type is DIRECT (graphics, compute and copy) for now. COMPUTE and COPY queues exist for separate work. Janus uses DIRECT only.</p>
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 270" width="760" height="270" role="img" aria-label="The three command objects. A command list writes commands into memory owned by a command allocator. A closed list is submitted to the command queue, which hands it to the GPU. The allocator must not be reset until the GPU has finished reading it.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>
+.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;fill:#e5e7eb}
+.red{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#f87171}
+</style>
+<text class="ttl" x="20" y="24">Three objects, three jobs</text>
+<rect x="20" y="52" width="210" height="96" rx="6" fill="#34d399" fill-opacity="0.12" stroke="#34d399" stroke-width="1.4"/>
+<text class="mono" x="125" y="80" text-anchor="middle">CommandAllocator</text>
+<text class="dim" x="125" y="102" text-anchor="middle">owns the memory</text>
+<text class="dim" x="125" y="118" text-anchor="middle">the commands live in</text>
+<text class="dim" x="125" y="134" text-anchor="middle">Reset() frees it all at once</text>
+<rect x="275" y="52" width="210" height="96" rx="6" fill="#60a5fa" fill-opacity="0.12" stroke="#60a5fa" stroke-width="1.4"/>
+<text class="mono" x="380" y="80" text-anchor="middle">GraphicsCommandList</text>
+<text class="dim" x="380" y="102" text-anchor="middle">the pen: you call Draw,</text>
+<text class="dim" x="380" y="118" text-anchor="middle">Clear, ResourceBarrier on it</text>
+<text class="dim" x="380" y="134" text-anchor="middle">Close() ends recording</text>
+<rect x="530" y="52" width="210" height="96" rx="6" fill="#fbbf24" fill-opacity="0.12" stroke="#fbbf24" stroke-width="1.4"/>
+<text class="mono" x="635" y="80" text-anchor="middle">CommandQueue</text>
+<text class="dim" x="635" y="102" text-anchor="middle">the door to the GPU</text>
+<text class="dim" x="635" y="118" text-anchor="middle">ExecuteCommandLists</text>
+<text class="dim" x="635" y="134" text-anchor="middle">Signal(fence, value)</text>
+<line x1="273" y1="90" x2="232" y2="90" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<text class="dim" x="252" y="82" text-anchor="middle">writes</text>
+<line x1="487" y1="90" x2="528" y2="90" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<text class="dim" x="508" y="82" text-anchor="middle">submit</text>
+<line x1="635" y1="150" x2="635" y2="186" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="560" y="188" width="150" height="34" rx="5" fill="none" stroke="#9ca3af" stroke-width="1.4"/>
+<text class="lbl" x="635" y="210" text-anchor="middle">GPU reads the memory</text>
+<text class="red" x="20" y="190">Reset the allocator only after the GPU has finished</text>
+<text class="red" x="20" y="208">reading what is in it. That is what fences are for.</text>
+<text class="dim" x="20" y="250">A list can be Reset() and reused right after submission. The allocator behind it cannot.</text>
+</svg><figcaption>Who writes where, and why the allocator needs a fence before it is reset.</figcaption></figure>
+
+<h2>3. Swapchain (flip model)</h2>
+<p>A swapchain is a small ring of images. The window shows one of them while the GPU draws into another. In the flip model, <code>DXGI_SWAP_EFFECT_FLIP_DISCARD</code>, the display switches which buffer it reads from instead of copying pixels. That makes it cheap.</p>
+<ul>
+<li>At any moment each buffer has exactly one role: <b>on screen</b>, <b>ready and waiting</b>, or <b>being rendered into</b>.</li>
+<li><code>Present()</code> advances the roles by one step around the ring.</li>
+<li><code>GetCurrentBackBufferIndex()</code> returns which buffer is the one to render into this frame. We use that index to pick the matching RTV (next section).</li>
+<li>The minimum is 2 buffers. Janus uses 3, so the GPU is less likely to wait for the display.</li>
+<li>The swapchain needs the window handle (HWND). GLFW provides it through <code>glfw3native.h</code> (<code>glfwGetWin32Window</code>), which is why <code>Window</code> gets a getter.</li>
+</ul>
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 270" width="760" height="270" role="img" aria-label="Three back buffers rotating roles. In each frame one buffer is on screen, one is ready and waiting, and one is being rendered into. The roles rotate every frame.">
+<style>
+.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;fill:#e5e7eb}
+</style>
+<text class="ttl" x="20" y="24">Three buffers, three roles, rotating</text>
+<text class="mono" x="265" y="56" text-anchor="middle">buffer 0</text><text class="mono" x="445" y="56" text-anchor="middle">buffer 1</text><text class="mono" x="625" y="56" text-anchor="middle">buffer 2</text>
+<text class="lbl" x="20" y="96">frame k</text><text class="lbl" x="20" y="156">frame k+1</text><text class="lbl" x="20" y="216">frame k+2</text>
+<rect x="180" y="70" width="170" height="40" rx="5" fill="#34d399" fill-opacity="0.18" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="265" y="95" text-anchor="middle">on screen</text>
+<rect x="360" y="70" width="170" height="40" rx="5" fill="#9ca3af" fill-opacity="0.12" stroke="#9ca3af" stroke-width="1.4"/><text class="lbl" x="445" y="95" text-anchor="middle">ready, waiting</text>
+<rect x="540" y="70" width="170" height="40" rx="5" fill="#fbbf24" fill-opacity="0.18" stroke="#fbbf24" stroke-width="1.4"/><text class="lbl" x="625" y="95" text-anchor="middle">GPU rendering into</text>
+<rect x="180" y="130" width="170" height="40" rx="5" fill="#fbbf24" fill-opacity="0.18" stroke="#fbbf24" stroke-width="1.4"/><text class="lbl" x="265" y="155" text-anchor="middle">GPU rendering into</text>
+<rect x="360" y="130" width="170" height="40" rx="5" fill="#34d399" fill-opacity="0.18" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="445" y="155" text-anchor="middle">on screen</text>
+<rect x="540" y="130" width="170" height="40" rx="5" fill="#9ca3af" fill-opacity="0.12" stroke="#9ca3af" stroke-width="1.4"/><text class="lbl" x="625" y="155" text-anchor="middle">ready, waiting</text>
+<rect x="180" y="190" width="170" height="40" rx="5" fill="#9ca3af" fill-opacity="0.12" stroke="#9ca3af" stroke-width="1.4"/><text class="lbl" x="265" y="215" text-anchor="middle">ready, waiting</text>
+<rect x="360" y="190" width="170" height="40" rx="5" fill="#fbbf24" fill-opacity="0.18" stroke="#fbbf24" stroke-width="1.4"/><text class="lbl" x="445" y="215" text-anchor="middle">GPU rendering into</text>
+<rect x="540" y="190" width="170" height="40" rx="5" fill="#34d399" fill-opacity="0.18" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="625" y="215" text-anchor="middle">on screen</text>
+<text class="dim" x="20" y="256">Each Present() advances the cycle. GetCurrentBackBufferIndex() tells you which buffer is yours next.</text>
+</svg><figcaption>Roles rotate on every Present().</figcaption></figure>
+
+<h3>Memory cost</h3>
+<p>RGBA8 means 4 bytes per pixel (one byte each for red, green, blue and alpha). One buffer costs width x height x 4 bytes, and the swapchain holds three of them.</p>
+<div class="math">bytes_per_buffer = width * height * 4<br>total = bytes_per_buffer * buffer_count</div>
+<table>
+<tr><th>Resolution</th><th>Per buffer</th><th>Three buffers</th></tr>
+<tr><td>1280 x 720</td><td>3,686,400 B (3.52 MiB)</td><td>11,059,200 B (10.55 MiB)</td></tr>
+<tr><td>1920 x 1080</td><td>8,294,400 B (7.91 MiB)</td><td>24,883,200 B (23.73 MiB)</td></tr>
+</table>
+<p>MiB divides by 1,048,576 (2<sup>20</sup>). MB divides by 1,000,000, which gives a slightly larger number for the same bytes: 24,883,200 B is 23.73 MiB or 24.88 MB.</p>
+
+<h2>4. RTVs and descriptor heaps</h2>
+<p>The GPU does not draw into a texture directly. It draws through a <b>render target view (RTV)</b>, a small record that says "treat that texture as a render target, with this format and this mip level". RTVs are stored in a <b>descriptor heap</b>, which is simply an array of descriptors.</p>
+<ul>
+<li>The heap type is RTV. RTV and DSV heaps are never shader-visible, so the CPU creates and uses them directly.</li>
+<li>We create one RTV per back buffer, once at startup. For 3 buffers the heap has 3 slots.</li>
+<li>Each frame, the back buffer index from the swapchain picks the slot.</li>
+</ul>
+
+<h3>Finding slot i</h3>
+<p>Slots are packed one after another, but the size of one slot is up to the driver. So you ask the device for it and step from the heap's start:</p>
+<div class="math">increment = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)<br>handle(i) = heapStart + i * increment</div>
+<p>Worked example. Suppose the driver reports an increment of 32 bytes (an illustrative value; yours may differ). Then:</p>
+<table>
+<tr><th>Slot</th><th>Back buffer</th><th>Handle</th></tr>
+<tr><td>0</td><td>0</td><td>heapStart</td></tr>
+<tr><td>1</td><td>1</td><td>heapStart + 32</td></tr>
+<tr><td>2</td><td>2</td><td>heapStart + 64</td></tr>
+</table>
+<p>The size differs between GPU vendors and driver versions. A hardcoded number would work on one machine and point into the wrong place on another, so the code always queries it once and reuses the result.</p>
+<figure><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img" aria-label="An RTV descriptor heap with three slots. Each slot is a descriptor that points to one swapchain back buffer. The handle for slot i is the heap start plus i times the descriptor increment size.">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>
+.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}
+.lbl{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}
+.dim{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:11px;fill:#9ca3af}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;fill:#e5e7eb}
+</style>
+<text class="ttl" x="20" y="24">RTV heap: slots that point at buffers</text>
+<rect x="20" y="46" width="250" height="150" rx="6" fill="none" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text class="dim" x="32" y="64">DescriptorHeap (type RTV, CPU only)</text>
+<rect x="36" y="76" width="218" height="34" rx="4" fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="1.4"/><text class="mono" x="145" y="98" text-anchor="middle">slot 0: RTV</text>
+<rect x="36" y="118" width="218" height="34" rx="4" fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="1.4"/><text class="mono" x="145" y="140" text-anchor="middle">slot 1: RTV</text>
+<rect x="36" y="160" width="218" height="34" rx="4" fill="#a78bfa" fill-opacity="0.16" stroke="#a78bfa" stroke-width="1.4"/><text class="mono" x="145" y="182" text-anchor="middle">slot 2: RTV</text>
+<line x1="256" y1="93" x2="430" y2="93" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="256" y1="135" x2="430" y2="135" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="256" y1="177" x2="430" y2="177" stroke="#e5e7eb" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="432" y="76" width="200" height="34" rx="4" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="532" y="98" text-anchor="middle">back buffer 0</text>
+<rect x="432" y="118" width="200" height="34" rx="4" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="532" y="140" text-anchor="middle">back buffer 1</text>
+<rect x="432" y="160" width="200" height="34" rx="4" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="lbl" x="532" y="182" text-anchor="middle">back buffer 2</text>
+<text class="mono" x="20" y="222">handle(i) = heapStart + i * GetDescriptorHandleIncrementSize(RTV)</text>
+<text class="dim" x="20" y="240">The increment is chosen by the driver. Never hardcode it.</text>
+</svg><figcaption>Three slots, each pointing at one back buffer.</figcaption></figure>
+
+<h2>5. What B2 builds</h2>
+<p>Command queue, swapchain (3 buffers, flip-discard), RTV heap with 3 RTVs, and a list that clears the current back buffer, then Present. The barrier that makes the buffer writable (Enhanced Barriers) is lesson B2b.</p>
+<figure>
+<svg viewBox="0 0 760 250" role="img" aria-label="Flow of B2. Startup creates the queue, swapchain, RTV heap and RTVs. Each frame gets the back buffer index, resets the allocator and list, records a clear, closes, executes, presents and signals a fence.">
+<defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e5e7eb"/></marker></defs>
+<style>.ft{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:12px;fill:#d1d5db}.fh{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-size:13px;fill:#c7d2fe}</style>
+<text class="fh" x="20" y="22">Once at startup</text>
+<rect x="20" y="34" width="130" height="40" rx="5" fill="#60a5fa" fill-opacity="0.14" stroke="#60a5fa" stroke-width="1.4"/><text class="ft" x="85" y="59" text-anchor="middle">command queue</text>
+<rect x="190" y="34" width="130" height="40" rx="5" fill="#34d399" fill-opacity="0.14" stroke="#34d399" stroke-width="1.4"/><text class="ft" x="255" y="59" text-anchor="middle">swapchain x3</text>
+<rect x="360" y="34" width="130" height="40" rx="5" fill="#a78bfa" fill-opacity="0.14" stroke="#a78bfa" stroke-width="1.4"/><text class="ft" x="425" y="59" text-anchor="middle">RTV heap</text>
+<rect x="530" y="34" width="130" height="40" rx="5" fill="#a78bfa" fill-opacity="0.14" stroke="#a78bfa" stroke-width="1.4"/><text class="ft" x="595" y="59" text-anchor="middle">3 RTVs</text>
+<line x1="152" y1="54" x2="188" y2="54" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<line x1="322" y1="54" x2="358" y2="54" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<line x1="492" y1="54" x2="528" y2="54" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<text class="fh" x="20" y="116">Every frame</text>
+<rect x="20" y="128" width="100" height="44" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="ft" x="70" y="148" text-anchor="middle">back buffer</text><text class="ft" x="70" y="163" text-anchor="middle">index</text>
+<rect x="150" y="128" width="100" height="44" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="ft" x="200" y="148" text-anchor="middle">reset alloc</text><text class="ft" x="200" y="163" text-anchor="middle">+ list</text>
+<rect x="280" y="128" width="100" height="44" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="ft" x="330" y="148" text-anchor="middle">record</text><text class="ft" x="330" y="163" text-anchor="middle">clear RTV</text>
+<rect x="410" y="128" width="100" height="44" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="ft" x="460" y="148" text-anchor="middle">Close +</text><text class="ft" x="460" y="163" text-anchor="middle">Execute</text>
+<rect x="540" y="128" width="100" height="44" rx="5" fill="#fbbf24" fill-opacity="0.14" stroke="#fbbf24" stroke-width="1.4"/><text class="ft" x="590" y="148" text-anchor="middle">Present</text><text class="ft" x="590" y="163" text-anchor="middle">+ Signal</text>
+<line x1="122" y1="150" x2="148" y2="150" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<line x1="252" y1="150" x2="278" y2="150" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<line x1="382" y1="150" x2="408" y2="150" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<line x1="512" y1="150" x2="538" y2="150" stroke="#e5e7eb" stroke-width="1.4" marker-end="url(#f)"/>
+<path d="M590 174 L590 210 L70 210 L70 174" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#f)"/>
+<text class="ft" x="330" y="228" text-anchor="middle" style="fill:#9ca3af">next frame</text>
+</svg>
+<figcaption>The barrier between "reset" and "record" arrives in B2b.</figcaption></figure>
+</main>
+<script>
+(function(){
+var k='janusFontPx',px=16,r=document.documentElement;
+try{px=+localStorage.getItem(k)||16}catch(e){}
+function set(v){px=Math.max(12,Math.min(26,v));r.style.fontSize=px+'px';try{localStorage.setItem(k,px)}catch(e){}}
+set(px);
+document.getElementById('fsm').onclick=function(){set(px-1)};
+document.getElementById('fsp').onclick=function(){set(px+1)};
+})();
+</script>
+</body>
+</html>
