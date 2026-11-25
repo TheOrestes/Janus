@@ -4,11 +4,15 @@
 
 namespace JN::D3D12::Core
 {
-    IDXGIFactory6* G_pFactory = nullptr;
-    ID3D12Debug1*  G_pDebug   = nullptr;
-    ID3D12Device*  G_pDevice  = nullptr;
+    IDXGIFactory6*      G_pFactory = nullptr;
+    ID3D12Debug1*       G_pDebug   = nullptr;
+    ID3D12Device*       G_pDevice  = nullptr;
+    ID3D12CommandQueue* G_pCommandQueue = nullptr;
+    ID3D12Fence*        G_pFence = nullptr;
 
-    static DWORD   G_uiMessageCookie = 0; // handle for UnregisterMessageCallback
+    static DWORD        G_uiMessageCookie = 0; // handle for UnregisterMessageCallback
+    static UINT64       G_uiFenceValue = 0;
+    static HANDLE       G_hFenceEvent = nullptr;
 
     //-----------------------------------------------------------------------------------------------------------------
     static void EnableDebugLayer()
@@ -45,6 +49,54 @@ namespace JN::D3D12::Core
         pQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
         pQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
         SafeRelease(pQueue);
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    static void CreateCommandQueue()
+    {
+        D3D12_COMMAND_QUEUE_DESC desc = {};
+        desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+
+        JN_CHECK_HRESULT(G_pDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&G_pCommandQueue)));
+        JN_LOG_DEBUG("Command Queue created...");
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    static void CreateFence()
+    {
+        JN_CHECK_HRESULT(G_pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&G_pFence)));
+        JN_LOG_DEBUG("Fence created...");
+
+        G_hFenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        JN_CHECK(G_hFenceEvent != nullptr, "CreateEventW failed!");
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    UINT64 SignalFence()
+    {
+        ++G_uiFenceValue;
+
+        JN_CHECK_HRESULT(G_pCommandQueue->Signal(G_pFence, G_uiFenceValue));
+        return G_uiFenceValue;
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    void WaitForFence(UINT64 uiValue)
+    {
+	    if (G_pFence->GetCompletedValue() >= uiValue)
+	    {
+            return;
+	    }
+
+        JN_CHECK_HRESULT(G_pFence->SetEventOnCompletion(uiValue, G_hFenceEvent));
+        WaitForSingleObject(G_hFenceEvent, INFINITE);
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    void WaitIdle()
+    {
+        WaitForFence(SignalFence());
     }
 
     //-----------------------------------------------------------------------------------------------------------------
@@ -89,21 +141,32 @@ namespace JN::D3D12::Core
     {
         EnableDebugLayer();
 
-        JN_CHECK_HRESULT(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG,
-                                            IID_PPV_ARGS(&G_pFactory)));
+        JN_CHECK_HRESULT(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&G_pFactory)));
 
         IDXGIAdapter1* pAdapter = PickAdapter();
-        JN_CHECK_HRESULT(D3D12CreateDevice(pAdapter, D3D_FEATURE_LEVEL_12_0,
-                                           IID_PPV_ARGS(&G_pDevice)));
+        JN_CHECK_HRESULT(D3D12CreateDevice(pAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&G_pDevice)));
+
         RouteDebugMessagesToLogger();
         RequireEnhancedBarriers();
         EnableBreakOnError();
+
+        CreateCommandQueue();
+        CreateFence();
+
         SafeRelease(pAdapter);
     }
 
     //-----------------------------------------------------------------------------------------------------------------
     void Shutdown()
     {
+        WaitIdle();
+        
+    	CloseHandle(G_hFenceEvent);
+        G_hFenceEvent = nullptr;
+        SafeRelease(G_pFence);
+
+        SafeRelease(G_pCommandQueue);
+
         ID3D12DebugDevice* pDebugDevice = nullptr;
         if (SUCCEEDED(G_pDevice->QueryInterface(IID_PPV_ARGS(&pDebugDevice))))
         {
