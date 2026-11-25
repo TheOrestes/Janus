@@ -15,6 +15,13 @@ namespace JN
     spdlog::logger* G_pAppLogger    = nullptr;
     spdlog::logger* G_pD3D12Logger  = nullptr;
 
+    // 256-colour foreground per level, shared by the [TAG] and the message text.
+    static int LevelColor(spdlog::level::level_enum level)
+    {
+        static const int colors[] = { 244, 244, 41, 220, 203, 196, 0 }; // TRCE DBUG INFO WARN ERRO CRIT OFF
+        return colors[static_cast<int>(level)];
+    }
+
     // Custom pattern flag %k: the level as a bracketed 4-letter tag, e.g. [INFO]. Coloured
     // text on the console, plain text in the file, so both read the same.
     class LevelFlag final : public spdlog::custom_flag_formatter
@@ -24,13 +31,13 @@ namespace JN
 
         void format(const spdlog::details::log_msg& msg, const std::tm&, spdlog::memory_buf_t& dest) override
         {
-            static const char* const names[]  = { "TRCE", "DBUG", "INFO", "WARN", "ERRO", "CRIT", "OFF " };
-            static const int         colors[] = { 244, 244, 41, 220, 203, 196, 0 }; // 256-colour foreground
+            static const char* const names[] = { "TRCE", "DBUG", "INFO", "WARN", "ERRO", "CRIT", "OFF " };
             const int i = static_cast<int>(msg.level);
             const std::string tag = std::string("[") + names[i] + "]";
             const std::string text = m_bColor
-                ? fmt::format("\x1b[{}38;5;{}m{}\x1b[0m", msg.level == spdlog::level::critical ? "1;" : "", colors[i], tag)
+                ? fmt::format("\x1b[{}38;5;{}m{}\x1b[0m", msg.level == spdlog::level::critical ? "1;" : "", LevelColor(msg.level), tag)
                 : tag;
+
             dest.append(text.data(), text.data() + text.size());
         }
 
@@ -84,11 +91,38 @@ namespace JN
         bool m_bColor;
     };
 
+    // Custom pattern flag %&: starts the level colour for the message text. The pattern ends
+    // the span with a reset code. Emits nothing for the plain file sink.
+    class MessageColorFlag final : public spdlog::custom_flag_formatter
+    {
+    public:
+        explicit MessageColorFlag(bool bColor) : m_bColor(bColor) {}
+
+        void format(const spdlog::details::log_msg& msg, const std::tm&, spdlog::memory_buf_t& dest) override
+        {
+            if (m_bColor)
+            {
+                const std::string text = fmt::format("\x1b[{}38;5;{}m", msg.level == spdlog::level::critical ? "1;" : "", LevelColor(msg.level));
+                dest.append(text.data(), text.data() + text.size());
+            }
+        }
+
+        std::unique_ptr<custom_flag_formatter> clone() const override
+        {
+            return std::make_unique<MessageColorFlag>(m_bColor);
+        }
+
+    private:
+        bool m_bColor;
+    };
+
     //-----------------------------------------------------------------------------------------------------------------
     static std::unique_ptr<spdlog::formatter> MakeFormatter(const char* pPattern, bool bColor)
     {
         auto pFormatter = std::make_unique<spdlog::pattern_formatter>();
-        pFormatter->add_flag<LevelFlag>('k', bColor).add_flag<SourceFlag>('*', bColor).set_pattern(pPattern);
+        pFormatter->add_flag<LevelFlag>('k', bColor).add_flag<SourceFlag>('*', bColor)
+            .add_flag<MessageColorFlag>('&', bColor).set_pattern(pPattern);
+
         return pFormatter;
     }
 
@@ -130,7 +164,7 @@ namespace JN
         // Set after the loggers exist: registering a logger resets its sinks' formatter.
         // Each sink gets its own formatter (console coloured, file plain) and the loggers
         // share them.
-        pConsole->set_formatter(MakeFormatter("\x1b[90m%T\x1b[0m %* %k %v", true));
+        pConsole->set_formatter(MakeFormatter("\x1b[90m%T\x1b[0m %* %k %&%v\x1b[0m", true));
         pFile->set_formatter(MakeFormatter("%T %* %k %v", false));
     }
 }
