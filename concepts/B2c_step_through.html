@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@500;700&family=SUSE+Mono:wght@400;600&display=swap" rel="stylesheet">
+<title>B2c Step Through: One Frame</title>
+<style>
+:root{--bg:#0f1115;--fg:#e5e7eb;--dim:#9ca3af;--card:#171a21;--line:#2a2f3a;--acc:#c7d2fe;--code:#1e222b}
+@media (prefers-color-scheme:light){:root{--bg:#f6f7f9;--fg:#1f2937;--dim:#6b7280;--card:#ffffff;--line:#d9dde4;--acc:#3730a3;--code:#eef0f4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.65 Inter,system-ui,sans-serif}
+main{max-width:1048px;margin:0 auto;padding:32px 16px 64px}
+h1,h2,h3,button,.chip,.badge,.sg{font-family:'Space Grotesk',Inter,system-ui,sans-serif}
+h1{font-size:1.8rem;margin:0 0 4px}
+.sub{color:var(--dim);margin:0 0 20px}
+code,.mono{font-family:'SUSE Mono',ui-monospace,Consolas,monospace}
+code{background:var(--code);padding:1px 6px;border-radius:4px;font-size:.9em}
+.fs{position:sticky;top:8px;float:right;display:flex;gap:6px;z-index:5}
+button{font:600 .9rem 'Space Grotesk',Inter,sans-serif;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--acc)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.tabs{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
+.tabs button[aria-selected=true]{border-color:var(--acc);color:var(--acc)}
+.stage{background:#12151b;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto}
+.stage svg{display:block;min-width:960px;width:100%;height:auto}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.bar label{display:flex;gap:8px;align-items:center;color:var(--dim);font-size:.9rem}
+.bar input[type=range]{width:140px;accent-color:#818cf8}
+.spd{min-width:3.2em;font-family:'Space Grotesk',sans-serif;font-weight:600}
+.opt{margin-left:auto}
+.canvas{position:relative;min-width:960px}
+.callout{position:absolute;z-index:3;background:#171a21;color:#b8bec9;border:1px solid rgba(199,210,254,.25);border-radius:6px;padding:6px 9px;font-size:.7rem;line-height:1.4;transition:top .2s ease}
+.callout .ptr{position:absolute;left:-5px;width:9px;height:9px;background:#171a21;border-left:1px solid rgba(199,210,254,.25);border-bottom:1px solid rgba(199,210,254,.25);transform:rotate(45deg)}
+.callout.none .ptr{display:none}
+.callout .top{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:1px}
+.callout h2{font-size:.74rem;margin:0;color:#c7d2fe;border:0;padding:0;font-weight:600}
+.callout .clk{font:500 .62rem 'Space Grotesk',sans-serif;color:#7c8494;letter-spacing:.04em}
+.callout .call{font-family:'SUSE Mono',ui-monospace,Consolas,monospace;color:#dfe3ea;font-size:.66rem;margin:1px 0 2px;overflow-wrap:anywhere}
+.callout p{margin:0}
+@media (prefers-reduced-motion:reduce){.callout{transition:none}}
+.badge{font-size:.75rem;border-radius:999px;padding:1px 10px;border:1px solid var(--line);color:var(--dim)}
+.badge.cpu{color:#60a5fa;border-color:#60a5fa}
+.badge.gpu{color:#34d399;border-color:#34d399}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 0}
+.chip{min-width:34px;padding:3px 8px;font-size:.85rem}
+.chip.done{background:rgba(129,140,248,.18)}
+.chip.cur{border-color:var(--acc);color:var(--acc);background:rgba(129,140,248,.3)}
+.hint{color:var(--dim);font-size:.85rem;margin-top:10px}
+svg text{font-family:'Space Grotesk',Inter,system-ui,sans-serif}
+svg .m{font-family:'SUSE Mono',ui-monospace,Consolas,monospace}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+<div class="fs" role="group" aria-label="Font size"><button id="fsm" aria-label="Decrease font size">A-</button><button id="fsp" aria-label="Increase font size">A+</button></div>
+<h1>B2c: step through a frame</h1>
+<p class="sub">Walk the D3D12 frame one call at a time, or let it play at the pace you choose. The coloured text under each object shows its state after every step.</p>
+
+<div class="tabs" role="tablist" aria-label="Scenario">
+<button role="tab" id="tab-setup" aria-selected="false">1. Setup, once</button>
+<button role="tab" id="tab-frame" aria-selected="true">2. One frame</button>
+</div>
+
+<div class="stage" id="stage" aria-live="off"></div>
+
+<div class="bar">
+<button id="bReset" aria-label="Back to the start">&#x23EE; Reset</button>
+<button id="bPrev" aria-label="Previous step">&#9664; Prev</button>
+<button id="bPlay" aria-label="Play or pause">&#9654; Play</button>
+<button id="bNext" aria-label="Next step">Next &#9654;</button>
+<label>Pause between steps <input type="range" id="speed" min="0.25" max="3" step="0.25" value="1" aria-label="Speed of the pause between steps"><span class="spd" id="spdv">1x</span></label>
+<label class="opt" id="optWrap"><input type="checkbox" id="optWait"> The GPU is still busy with this slot, so the CPU has to wait</label>
+</div>
+
+<div class="chips" id="chips" role="group" aria-label="Jump to step"></div>
+<p class="hint">Keyboard: <code>&rarr;</code> next, <code>&larr;</code> previous, <code>Space</code> play or pause. Faint arrows are steps still to come. Green rows run on the GPU's own clock, after the CPU has already moved on.</p>
+</main>
+
+<script>
+(function(){
+'use strict';
+var P={
+  cpu:['CPU thread','your code','#60a5fa'],
+  device:['ID3D12Device','the factory','#38bdf8'],
+  queue:['Command queue','the GPU inbox','#a78bfa'],
+  alloc:['Command allocator','memory for commands','#fbbf24'],
+  list:['Command list','the recorder','#f472b6'],
+  fence:['Fence','64-bit counter','#f59e0b'],
+  swap:['Swapchain','back buffers','#94a3b8'],
+  gpu:['GPU','executes the work','#34d399']
+};
+function st(from,to,label,call,kind,title,text,state,clock){return {from:from,to:to,label:label,call:call,kind:kind,title:title,text:text,s:state||{},clock:clock||'cpu'};}
+
+function buildSetup(){
+  return {
+    cols:['cpu','device','queue','alloc','list','fence'],
+    init:{cpu:'startup',device:'ready',queue:'not created',alloc:'not created',list:'not created',fence:'not created'},
+    steps:[
+      st('cpu','device','CreateCommandQueue','CreateCommandQueue(DIRECT)','call','Ask the device for a queue','The CPU never creates D3D12 objects itself. It asks the device, which is the factory for everything else.',{cpu:'asking the device'}),
+      st('device','queue','creates','','ret','The queue exists','A direct queue: the GPU inbox that accepts every kind of work (graphics, compute, copy).',{queue:'empty, ready'}),
+      st('cpu','device','CreateCommandAllocator','CreateCommandAllocator(DIRECT)','call','Ask for an allocator','The allocator is the memory the recorded commands will live in.'),
+      st('device','alloc','creates','','ret','The allocator exists','It starts empty.',{alloc:'empty'}),
+      st('cpu','device','CreateCommandList','CreateCommandList(allocator)','call','Ask for a command list','The list is bound to an allocator when it is created. That is where its commands will be stored.'),
+      st('device','list','creates','','ret','The list exists, and it is open','A new list starts in the recording state, bound to the allocator.',{list:'open, bound to the allocator'}),
+      st('cpu','device','CreateFence','CreateFence(0)','call','Ask for a fence','The fence is a 64-bit counter the GPU can raise.'),
+      st('device','fence','creates','','ret','The fence exists','Its counter starts at 0. The CPU also keeps its own next-value counter, starting at 0.',{fence:'counter = 0'}),
+      st('cpu','list','Close','Close()','call','Close the list straight away','Closing it now means every frame can start the same way: Reset the allocator, Reset the list, record. Setup is finished.',{list:'closed',cpu:'setup done'})
+    ]
+  };
+}
+
+function buildFrame(wait){
+  var steps=[];
+  steps.push(st('cpu','fence','GetCompletedValue','GetCompletedValue()','call','Ask the fence how far the GPU has got','A plain read of the counter. It never blocks.',{cpu:'checking the slot'}));
+  if(wait){
+    steps.push(st('fence','cpu','completed value C','C = 2','ret','The fence answers: not yet','C = 2, but this slot last signalled slotFence = 3. The CPU does the comparison: 2 is below 3, so the GPU is still using this slot\'s allocator. The CPU must not Reset it yet.',{cpu:'C=2 < slotFence=3'}));
+    steps.push(st('cpu','fence','SetEventOnCompletion','SetEventOnCompletion(3, event)','async','Ask to be told when the GPU reaches 3','The fence will raise an OS event once its counter reaches 3. The CPU then sleeps on that event with WaitForSingleObject.',{cpu:'sleeping on the event'}));
+    steps.push(st('fence','cpu','wait returns','WaitForSingleObject(event) returns','async','The GPU reached 3, the CPU wakes','This is the one place the CPU can stall. The previous frame in this slot is finished, so its allocator is free.',{cpu:'awake',fence:'counter = 3',alloc:'free, GPU done',gpu:'idle',queue:'empty'}));
+  } else {
+    steps.push(st('fence','cpu','completed value C','C = 3','ret','The fence answers: done','C = 3 and this slot last signalled slotFence = 3. The CPU does the comparison: 3 >= 3, so the GPU is finished with this slot. No wait. On frames 0 and 1 both numbers are 0 and the answer is the same.',{cpu:'C=3 >= slotFence=3'}));
+  }
+  steps.push(st('cpu','alloc','Reset','allocator->Reset()','call','Reset the allocator','Safe now, because the check passed. It discards the old commands so the memory can be reused.',{alloc:'empty, reset'}));
+  steps.push(st('cpu','list','Reset(allocator)','list->Reset(allocator)','call','Reopen the list','The list is reusable as soon as it was closed. Reset reopens it, bound to the freshly reset allocator.',{list:'open, bound to the allocator'}));
+  steps.push(st('cpu','list','Barrier, ClearRTV','Barrier, ClearRTV, Barrier','call','Record the frame\'s commands','The CPU calls these on the list. Nothing runs on the GPU yet.',{list:'open, 3 calls recorded',cpu:'recording'}));
+  steps.push(st('list','alloc','stores each command','','write','The list writes them into the allocator','Each call is stored in the allocator\'s memory. The list is the recorder, the allocator is where the bytes live.',{alloc:'filling, 3 commands'}));
+  steps.push(st('cpu','list','Close','list->Close()','call','Close the list','The list is finished and read-only.',{list:'closed'}));
+  steps.push(st('cpu','queue','ExecuteCommandLists','queue->ExecuteCommandLists(list)','call','Hand the list to the queue','The queue now owns the work. From here the GPU reads the allocator\'s memory, so the allocator is in use until the fence says otherwise.',{queue:'[ list ]',alloc:'in use by the GPU'}));
+  steps.push(st('cpu','swap','Present','swapchain->Present()','call','Ask the swapchain to present','The present is queued behind the list on the same queue, so the display only gets the image after it is drawn.',{swap:'present queued',queue:'[ list, present ]'}));
+  steps.push(st('cpu','queue','Signal','queue->Signal(fence, 4)','call','Queue a fence signal','Signal is itself a queue command. It sits behind the list and the present, so the fence only reaches 4 when everything before it has finished. The CPU remembers 4 as this slot\'s slotFence.',{queue:'[ list, present, signal 4 ]',cpu:'slotFence = 4'}));
+  steps.push(st('queue','gpu','run the list','','call','The GPU starts the list','This and the next step run on the GPU\'s own clock. The CPU has already moved on to preparing the next frame.',{queue:'[ present, signal 4 ]',gpu:'running the list'},'gpu'));
+  steps.push(st('gpu','fence','counter = 4','','write','The GPU reaches the signal','The list and the present are done, so the fence counter becomes 4. The allocator is free again, once a later frame checks the fence and sees 4.',{gpu:'idle',queue:'empty',swap:'presented',fence:'counter = 4',alloc:'free, GPU done'},'gpu'));
+  var init=wait?
+    {cpu:'next frame',fence:'counter = 2',alloc:'in use by the GPU',list:'closed',swap:'idle',queue:'[ previous frame ]',gpu:'running previous frame'}:
+    {cpu:'next frame',fence:'counter = 3',alloc:'free, GPU done',list:'closed',swap:'idle',queue:'empty',gpu:'idle'};
+  return {cols:['cpu','fence','alloc','list','swap','queue','gpu'],init:init,steps:steps};
+}
+
+var ARROW_MS=1200; // arrow animation time, fixed; the speed slider only scales the pause between steps
+var mode='frame', scen, states, idx=0, playing=false, timer=null, speed=1;
+var $=function(id){return document.getElementById(id);};
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function wrap(s,n){var w=s.split(' '),out=[],cur='';w.forEach(function(x){if((cur+' '+x).trim().length>n&&cur){out.push(cur);cur=x;}else{cur=(cur+' '+x).trim();}});if(cur)out.push(cur);return out;}
+
+function compute(){
+  scen=mode==='setup'?buildSetup():buildFrame($('optWait').checked);
+  states=[Object.assign({},scen.init)];
+  scen.steps.forEach(function(s){states.push(Object.assign({},states[states.length-1],s.s));});
+}
+
+var KIND={call:['#9ca3af','',' m-call'],ret:['#9ca3af','5,4','m-call'],write:['#60a5fa','','m-write'],async:['#a78bfa','5,4','m-async']};
+function mk(id,c){return '<marker id="'+id+'" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="'+c+'"/></marker>';}
+
+function drawSvg(){
+  var GUT=250,cols=scen.cols,n=cols.length,W=940,cw=W/n,top=40,rows0=176,pitch=46;
+  var steps=scen.steps,H=rows0+pitch*steps.length+24;
+  var cx={};cols.forEach(function(c,i){cx[c]=Math.round(cw*(i+0.5));});
+  var o=['<svg id="dia" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+(W+GUT)+' '+H+'" role="img" aria-label="Sequence diagram of the steps, current step highlighted">'];
+  o.push('<defs>'+mk('m-call','#9ca3af')+mk('m-write','#60a5fa')+mk('m-async','#a78bfa')+mk('m-cur','#c7d2fe')+'</defs>');
+  // gpu-clock band
+  var g0=-1,g1=-1;steps.forEach(function(s,i){if(s.clock==='gpu'){if(g0<0)g0=i;g1=i;}});
+  if(g0>=0){var by=rows0+pitch*g0-pitch/2;o.push('<rect x="8" y="'+by+'" width="'+(W-16)+'" height="'+(pitch*(g1-g0+1))+'" rx="6" fill="#34d399" fill-opacity="0.07" stroke="#34d399" stroke-opacity="0.35" stroke-dasharray="4,4"/>');
+    o.push('<text x="16" y="'+(by+14)+'" fill="#34d399" font-size="10" letter-spacing="0.08em">GPU CLOCK</text>');}
+  var bottom=rows0+pitch*steps.length-pitch/2;
+  var cur=states[idx];
+  cols.forEach(function(c){
+    var x=cx[c],col=P[c][2];
+    o.push('<line x1="'+x+'" y1="'+(top+48)+'" x2="'+x+'" y2="'+bottom+'" stroke="#e5e7eb" stroke-opacity="0.2" stroke-dasharray="3,4"/>');
+    var bw=Math.min(128,cw-12);
+    o.push('<rect x="'+(x-bw/2)+'" y="'+top+'" width="'+bw+'" height="48" rx="6" fill="'+col+'" fill-opacity="0.14" stroke="'+col+'" stroke-width="1.4"/>');
+    o.push('<text x="'+x+'" y="'+(top+21)+'" text-anchor="middle" fill="#e5e7eb" font-size="12" font-weight="600">'+esc(P[c][0])+'</text>');
+    o.push('<text x="'+x+'" y="'+(top+37)+'" text-anchor="middle" fill="#9ca3af" font-size="10">'+esc(P[c][1])+'</text>');
+    var changed=idx>0&&states[idx][c]!==states[idx-1][c];
+    wrap(cur[c]||'',Math.floor(bw/6.4)).slice(0,3).forEach(function(l,i){
+      o.push('<text x="'+x+'" y="'+(top+66+i*13)+'" text-anchor="middle" font-size="11" font-weight="'+(changed?700:500)+'" fill="'+(changed?'#c7d2fe':col)+'">'+esc(l)+'</text>');
+    });
+  });
+  steps.forEach(function(s,i){
+    var y=rows0+pitch*i,state=i<idx-1?'past':(i===idx-1?'cur':'future');
+    var k=KIND[s.kind],d=s.from===s.to?0:(cx[s.to]>cx[s.from]?1:-1);
+    var x1=cx[s.from]+5*d,x2=cx[s.to]-5*d;
+    var stroke=state==='cur'?'#c7d2fe':k[0],sw=state==='cur'?2.6:1.4,op=state==='future'?0.22:(state==='past'?0.75:1);
+    var mid=state==='cur'?'m-cur':k[2].trim();
+    o.push('<g opacity="'+op+'">');
+    o.push('<line x1="'+x1+'" y1="'+y+'" x2="'+x2+'" y2="'+y+'" stroke="'+stroke+'" stroke-width="'+sw+'"'+(k[1]?' stroke-dasharray="'+k[1]+'"':'')+' marker-end="url(#'+mid+')"/>');
+    var lx=(x1+x2)/2,lw=s.label.length*6.1+12;
+    o.push('<rect x="'+(lx-lw/2)+'" y="'+(y-22)+'" width="'+lw+'" height="14" rx="2" fill="#12151b"/>');
+    o.push('<text class="m" x="'+lx+'" y="'+(y-11)+'" text-anchor="middle" font-size="10" font-weight="'+(state==='cur'?700:400)+'" fill="'+(state==='cur'?'#c7d2fe':'#d1d5db')+'">'+esc(s.label)+'</text>');
+    o.push('<circle cx="14" cy="'+y+'" r="0"/>');
+    o.push('</g>');
+    o.push('<text x="'+(W-14)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" font-weight="700" fill="'+(state==='cur'?'#c7d2fe':'#6b7280')+'">'+(i+1)+'</text>');
+  });
+  o.push('<circle id="dot" r="0" fill="#c7d2fe"/>');
+  o.push('</svg>');
+  geo={W:W,GUT:GUT,rows0:rows0,pitch:pitch,cx:cx,top:top};
+  $('stage').innerHTML='<div class="canvas" id="canvas">'+o.join('')+'<div class="callout" id="callout" aria-live="polite"></div></div>';
+  // travelling dot
+  if(idx>0&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    var s=steps[idx-1],y=rows0+pitch*(idx-1),a=cx[s.from],b=cx[s.to];
+    var dot=$('dot');
+    if(s.from!==s.to&&dot&&dot.animate){dot.setAttribute('r','5');dot.setAttribute('cy',y);dot.setAttribute('cx',0);
+      dot.animate([{transform:'translateX('+a+'px)',opacity:1},{transform:'translateX('+b+'px)',opacity:1,offset:0.8},{transform:'translateX('+b+'px)',opacity:0}],{duration:ARROW_MS,easing:'ease-in-out',fill:'forwards'});}
+  }
+}
+
+var geo=null;
+function drawInfo(){
+  var c=$('callout');
+  if(idx===0){
+    c.innerHTML='<div class="ptr"></div><div class="top"><h2>'+(mode==='setup'?'Setup, once':'One frame, one slot')+'</h2><span class="clk">'+scen.steps.length+' steps</span></div><p>'+(mode==='setup'?'Nothing exists yet. The device will create every object once at startup.':'The objects exist and the list is closed. This is the state at the start of a frame for one slot.')+' Press <b>Next</b> or <b>Play</b>.</p>';
+  } else {
+    var s=scen.steps[idx-1];
+    c.innerHTML='<div class="ptr"></div><div class="top"><h2>'+idx+'. '+esc(s.title)+'</h2><span class="clk">'+(s.clock==='gpu'?'GPU clock':'CPU clock')+'</span></div>'+
+      (s.call?'<div class="call">'+esc(s.call)+'</div>':'')+'<p>'+esc(s.text)+'</p>';
+  }
+  placeCallout();
+}
+// callout lives in a fixed gutter on the right and only slides up or down to the current row
+function placeCallout(){
+  var c=$('callout'),cv=$('canvas'),svg=$('dia');
+  if(!c||!cv||!svg||!geo)return;
+  var r=svg.getBoundingClientRect(),sc=r.width/(geo.W+geo.GUT),ch=r.height;
+  c.style.left=((geo.W+4)*sc)+'px';c.style.width=((geo.GUT-12)*sc)+'px';
+  var h=c.offsetHeight,y=(geo.rows0+(idx>0?geo.pitch*(idx-1):0))*sc;
+  var top=Math.max(4,Math.min(ch-h-4,y-14));
+  c.style.top=top+'px';
+  c.className='callout'+(idx===0?' none':'');
+  var p=c.querySelector('.ptr');if(p)p.style.top=Math.max(6,Math.min(h-14,y-top-5))+'px';
+}
+function drawChips(){
+  var c=$('chips');c.innerHTML='';
+  for(var k=0;k<=scen.steps.length;k++){
+    (function(k){var b=document.createElement('button');b.className='chip'+(k===idx?' cur':(k<idx?' done':''));b.textContent=k===0?'start':k;b.setAttribute('aria-label',k===0?'Go to start':'Go to step '+k);b.onclick=function(){go(k,true);};c.appendChild(b);})(k);
+  }
+}
+function render(){
+  drawSvg();drawInfo();drawChips();
+  $('bPrev').disabled=idx===0;$('bReset').disabled=idx===0;
+  $('bNext').disabled=idx===scen.steps.length;
+  $('bPlay').innerHTML=playing?'&#10074;&#10074; Pause':'&#9654; Play';
+  $('optWrap').style.display=mode==='frame'?'flex':'none';
+}
+function stop(){playing=false;clearTimeout(timer);}
+function schedule(){
+  clearTimeout(timer);
+  if(!playing)return;
+  timer=setTimeout(function(){
+    if(idx<scen.steps.length){idx++;render();schedule();}
+    else{stop();render();}
+  },ARROW_MS+2200/speed);
+}
+function go(k,manual){if(manual)stop();idx=Math.max(0,Math.min(scen.steps.length,k));render();if(playing)schedule();}
+function setMode(m){stop();mode=m;idx=0;$('tab-setup').setAttribute('aria-selected',m==='setup');$('tab-frame').setAttribute('aria-selected',m==='frame');compute();render();}
+
+$('tab-setup').onclick=function(){setMode('setup');};
+$('tab-frame').onclick=function(){setMode('frame');};
+$('bNext').onclick=function(){go(idx+1,true);};
+$('bPrev').onclick=function(){go(idx-1,true);};
+$('bReset').onclick=function(){go(0,true);};
+$('bPlay').onclick=function(){
+  if(playing){stop();render();return;}
+  if(idx===scen.steps.length)idx=0;
+  playing=true;render();schedule();
+};
+$('speed').oninput=function(){speed=parseFloat(this.value);$('spdv').textContent=speed+'x';if(playing)schedule();};
+$('optWait').onchange=function(){stop();idx=0;compute();render();};
+document.addEventListener('keydown',function(e){
+  if(e.target&&/INPUT|BUTTON/.test(e.target.tagName)&&e.key===' ')return;
+  if(e.key==='ArrowRight'){e.preventDefault();go(idx+1,true);}
+  else if(e.key==='ArrowLeft'){e.preventDefault();go(idx-1,true);}
+  else if(e.key===' '){e.preventDefault();$('bPlay').click();}
+});
+
+// font size control, same key as the other concept pages
+var k='janusFontPx',px=16,r=document.documentElement;
+try{px=+localStorage.getItem(k)||16}catch(e){}
+function setPx(v){px=Math.max(12,Math.min(24,v));r.style.fontSize=px+'px';try{localStorage.setItem(k,px)}catch(e){}}
+setPx(px);
+$('fsm').onclick=function(){setPx(px-1)};$('fsp').onclick=function(){setPx(px+1)};
+
+window.addEventListener('resize',placeCallout);
+// deep link: #frame-8, #setup-3, #framewait-5
+var hm=/^#(setup|frame|framewait)(?:-(\d+))?$/.exec(location.hash);
+if(hm){
+  if(hm[1]==='framewait')$('optWait').checked=true;
+  mode=hm[1]==='setup'?'setup':'frame';
+  $('tab-setup').setAttribute('aria-selected',mode==='setup');$('tab-frame').setAttribute('aria-selected',mode==='frame');
+  compute();idx=Math.min(+(hm[2]||0),scen.steps.length);render();
+}else{compute();render();}
+})();
+</script>
+</body>
+</html>

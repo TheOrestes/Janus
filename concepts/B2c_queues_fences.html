@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@500;700&family=SUSE+Mono:wght@400;600&display=swap" rel="stylesheet">
+<title>B2c Queues, Fences, Frames in Flight</title>
+<style>
+:root{--bg:#0f1115;--fg:#e5e7eb;--dim:#9ca3af;--card:#171a21;--line:#2a2f3a;--acc:#c7d2fe;--code:#1e222b}
+@media (prefers-color-scheme:light){:root{--bg:#f6f7f9;--fg:#1f2937;--dim:#6b7280;--card:#ffffff;--line:#d9dde4;--acc:#3730a3;--code:#eef0f4}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.65 Inter,system-ui,sans-serif}
+main{max-width:984px;margin:0 auto;padding:32px 16px 64px}
+h1,h2,h3,th,.fh,.ttl{font-family:'Space Grotesk',Inter,system-ui,sans-serif}
+h3{font-size:1.05rem;margin:1.6rem 0 .4rem}
+ol{padding-left:1.4rem}ol li::marker{font-family:'Space Grotesk',Inter,system-ui,sans-serif;font-weight:600}
+h1{font-size:1.8rem;margin:0 0 4px}
+h2{font-size:1.25rem;margin:2.4rem 0 .6rem;color:var(--acc);border-bottom:1px solid var(--line);padding-bottom:6px}
+.sub{color:var(--dim);margin:0 0 24px}
+code{background:var(--code);padding:1px 6px;border-radius:4px;font:.9em 'SUSE Mono',ui-monospace,Consolas,monospace}
+ul{padding-left:1.2rem}li{margin:.35rem 0}
+figure{margin:20px 0;background:#12151b;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto}
+figure svg{display:block;width:100%;min-width:560px;height:auto}
+figcaption a{color:var(--acc)}figcaption{color:#9ca3af;font-size:.85rem;margin-top:8px}
+table{border-collapse:collapse;width:100%;margin:12px 0;background:var(--card);border:1px solid var(--line)}
+th,td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--acc);font-weight:600}
+.math{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:6px;padding:10px 14px;margin:12px 0;font:.95em 'SUSE Mono',ui-monospace,Consolas,monospace;overflow-x:auto;white-space:pre}
+.fs{position:sticky;top:8px;float:right;display:flex;gap:6px;z-index:5}
+.fs button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font:600 .9rem 'Space Grotesk',Inter,sans-serif;cursor:pointer}
+.fs button:hover{border-color:var(--acc)}
+</style>
+</head>
+<body>
+<main>
+<div class="fs" role="group" aria-label="Font size"><button id="fsm" aria-label="Decrease font size">A-</button><button id="fsp" aria-label="Increase font size">A+</button></div>
+<h1>B2c: Queues, Fences, Frames in Flight</h1>
+<p class="sub">Janus learning notes. How the CPU hands work to the GPU, how it knows the GPU is done, and why we keep more than one frame in flight.</p>
+
+<h2>0. The restaurant version</h2>
+<p>Before the API names, here is the whole idea as a restaurant.</p>
+<ul>
+<li><b>You are the waiter (CPU).</b> You write orders on cards. <b>The cook is the GPU.</b> The cook cooks exactly what the cards say, in order.</li>
+<li><b>The order slot is the queue.</b> You drop the cards in and walk away. You do not stand there while the food cooks.</li>
+<li><b>The scoreboard on the wall is the fence.</b> It shows one number. After each batch of cards you add one more card: "when you get here, write 4 on the scoreboard". Because the cook works in order, a 4 on the board means everything before that card is cooked. To find out, you glance at the board. If it isn't there yet, you take a nap and ask to be woken when it shows 4.</li>
+<li><b>The trays are the command allocators.</b> The cards sit on a tray, and the cook reads them off that tray while cooking. With one tray, you and the cook take turns waiting for each other. With two trays, you fill tray B while the cook works from tray A.</li>
+<li><b>The tray rule:</b> before you wipe a tray and write new cards on it, check that the board has reached the number you wrote on <i>that tray's</i> last batch. Otherwise you wipe cards the cook is still reading.</li>
+<li><b>Closing time is shutdown.</b> You do not take the stove away while the cook is still cooking. Wait for the last number, then clean up.</li>
+</ul>
+<table>
+<tr><th>Restaurant</th><th>D3D12</th></tr>
+<tr><td>Waiter</td><td>CPU thread</td></tr>
+<tr><td>Cook</td><td>GPU</td></tr>
+<tr><td>Order slot</td><td><code>ID3D12CommandQueue</code></td></tr>
+<tr><td>Writing cards</td><td>Recording into <code>ID3D12GraphicsCommandList</code></td></tr>
+<tr><td>Tray the cards sit on</td><td><code>ID3D12CommandAllocator</code></td></tr>
+<tr><td>Scoreboard</td><td><code>ID3D12Fence</code> (one <code>UINT64</code>)</td></tr>
+<tr><td>"Write 4 on the board" card</td><td><code>queue-&gt;Signal(fence, 4)</code></td></tr>
+<tr><td>Glancing at the board</td><td><code>fence-&gt;GetCompletedValue()</code></td></tr>
+<tr><td>Napping until it shows 4</td><td><code>SetEventOnCompletion(4, e)</code> + <code>WaitForSingleObject(e)</code></td></tr>
+</table>
+
+<h2>1. The CPU and GPU are two timelines</h2>
+<ul>
+<li>Calling a D3D12 function records or submits work. It does <b>not</b> run it. The GPU runs it later, on its own clock.</li>
+<li>So the CPU can be several frames ahead of the GPU. Anything the GPU is still reading (a buffer, a command allocator) must not be changed or freed by the CPU until the GPU is finished with it.</li>
+<li>The tool for knowing that is the <b>fence</b>.</li>
+</ul>
+
+<h2>2. The objects, in the order work flows</h2>
+<table>
+<tr><th>Object</th><th>Role</th></tr>
+<tr><td><code>ID3D12CommandAllocator</code></td><td>The memory the commands are recorded into. Reset only when the GPU is done with every list recorded in it.</td></tr>
+<tr><td><code>ID3D12GraphicsCommandList</code></td><td>The recorder. Cheap to reset and reuse right after <code>Close</code> and <code>ExecuteCommandLists</code>.</td></tr>
+<tr><td><code>ID3D12CommandQueue</code></td><td>The GPU's inbox. <code>ExecuteCommandLists</code> appends closed lists to it. Types: Direct (everything), Compute, Copy.</td></tr>
+<tr><td><code>ID3D12Fence</code></td><td>A 64-bit counter the GPU can raise. The CPU asks "has it reached N yet?".</td></tr>
+<tr><td><code>IDXGISwapChain</code></td><td>A ring of back buffers plus <code>Present</code>, which tells the display to show the next one.</td></tr>
+</table>
+<p>The allocator is the one people trip on. A list is reusable immediately, but its allocator is not: the GPU reads the allocator's memory while it executes. That is why we need one allocator per frame in flight.</p>
+
+<h2>3. The fence</h2>
+<div class="math">fenceValue (CPU side, we own it)   : 0 -> 1 -> 2 -> 3 ...
+queue->Signal(fence, N)            : "after everything before this, set the counter to N"
+fence->GetCompletedValue()         : what the GPU has reached so far
+fence->SetEventOnCompletion(N, e)  : raise an OS event when the counter reaches N
+WaitForSingleObject(e)             : CPU sleeps until then</div>
+<ul>
+<li><code>Signal</code> is itself a queue command. It lands after the frame's work, so reaching N means all earlier work is done.</li>
+<li>Check <code>GetCompletedValue() &gt;= N</code> first. If it is already true, do not wait at all.</li>
+<li>Fence values only ever increase. Never reuse one.</li>
+</ul>
+
+<!--SEQ-START--><h3>Setup and one frame, step by step</h3><p><b>Setup</b> runs once: the device creates every object, and the list is closed at the end so the frame loop can always start with <code>Reset</code>. <b>One frame</b> is the same steps every time: check, optional wait, reset, record, submit, present, signal. The wait only runs when the GPU is still using this slot. Use the tabs to switch, and Next or Play to step through.</p><figure style="width:min(1400px,96vw);margin-left:calc(50% - min(700px,48vw))"><iframe src="B2c_step_through.html" title="Step through setup and one frame" loading="lazy" style="width:100%;height:1000px;border:0;border-radius:6px"></iframe><figcaption>Jump straight in: <a href="B2c_step_through.html#setup" target="_blank" rel="noopener">setup</a>, <a href="B2c_step_through.html#frame" target="_blank" rel="noopener">one frame</a>, <a href="B2c_step_through.html#framewait" target="_blank" rel="noopener">one frame, GPU still busy</a>.</figcaption></figure><h3>First use versus reuse</h3><table>
+<tr><th></th><th>First use of a slot (frames 0 and 1)</th><th>Reuse of a slot (frame 2 onward)</th></tr>
+<tr><td>Fence check</td><td><code>GetCompletedValue()</code> returns a value at or above <code>slotFence</code> (both are 0), so the check passes at once</td><td>Passes if the GPU is already done with the slot. Otherwise the CPU arms <code>SetEventOnCompletion</code> and waits</td></tr>
+<tr><td>Allocator <code>Reset()</code></td><td>Harmless: nothing has used it yet</td><td>Safe only because the check passed</td></tr>
+<tr><td>List <code>Reset(allocator)</code></td><td colspan="2">Same call every frame. Setup closed the list, so Reset is always valid</td></tr>
+<tr><td>Record, close, execute, present, signal</td><td colspan="2">Identical</td></tr>
+</table>
+<p>So there is no special first frame in the code. The only difference is whether the fence check has to wait. With 2 frames in flight, frames 0 and 1 never wait and frame 2 is the first that can. The B2c code uses one allocator and waits for the GPU every frame, so there frame 1 is already a reuse.</p><!--SEQ-END-->
+
+<h2>4. Frames in flight</h2>
+<ul>
+<li><b>One frame in flight</b>: the CPU records frame N, the GPU runs it, the CPU waits for it, and only then records N+1. Simple, but one side is always idle.</li>
+<li><b>Two or three in flight</b>: the CPU records N+1 while the GPU runs N. Each slot owns its own allocator (and later its own constant buffers), because the GPU may still be reading slot N while the CPU works on N+1.</li>
+<li>Before reusing slot <code>i</code>, wait until the fence value we signalled for that slot last time has been reached.</li>
+<li>Janus will start with <b>2</b>. More frames means more latency (input to screen) and fewer stalls.</li>
+</ul>
+<div class="math">frame loop, slot = frameIndex % 2:
+  wait fence >= slotFence[slot]        // GPU done with this slot's last use
+  allocator[slot]->Reset(); list->Reset(allocator[slot])
+  record: barrier PRESENT->RENDER_TARGET, clear, barrier RENDER_TARGET->PRESENT
+  Close; queue->ExecuteCommandLists
+  swapchain->Present
+  slotFence[slot] = ++fenceValue; queue->Signal(fence, slotFence[slot])</div>
+
+<h3>Which value does a reused slot wait for?</h3>
+<p>The value that slot was tagged with last time, <b>not</b> the value the new frame is about to signal. Frame 2 reuses slot 0, so it waits for 1, the value frame 0 signalled. Waiting for 3 would deadlock: 3 is only signalled <i>after</i> frame 2's own work, which has not been submitted yet.</p>
+<figure>
+<svg viewBox="0 0 760 330" role="img" aria-label="Frames 0 to 3 alternating between slot 0 and slot 1. Frame 2 reuses slot 0 and waits for fence value 1 from frame 0; frame 3 reuses slot 1 and waits for value 2 from frame 1." font-family="Space Grotesk, Inter, sans-serif">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"/></marker></defs>
+<text x="20" y="96" fill="#c7d2fe" font-size="14" font-weight="700">Slot 0</text>
+<text x="20" y="114" fill="#9ca3af" font-size="11">tray A</text>
+<text x="20" y="196" fill="#c7d2fe" font-size="14" font-weight="700">Slot 1</text>
+<text x="20" y="214" fill="#9ca3af" font-size="11">tray B</text>
+<line x1="140" y1="140" x2="740" y2="140" stroke="#2a2f3a" stroke-dasharray="4 4"/>
+<g font-size="13" fill="#e5e7eb">
+<rect x="150" y="70" width="130" height="56" rx="6" fill="#1e2433" stroke="#4b5563"/>
+<text x="215" y="92" text-anchor="middle" font-weight="700">Frame 0</text>
+<text x="215" y="112" text-anchor="middle" fill="#86efac">signal 1</text>
+<rect x="300" y="170" width="130" height="56" rx="6" fill="#1e2433" stroke="#4b5563"/>
+<text x="365" y="192" text-anchor="middle" font-weight="700">Frame 1</text>
+<text x="365" y="212" text-anchor="middle" fill="#86efac">signal 2</text>
+<rect x="450" y="70" width="130" height="56" rx="6" fill="#1e2433" stroke="#fbbf24"/>
+<text x="515" y="88" text-anchor="middle" font-weight="700">Frame 2</text>
+<text x="515" y="104" text-anchor="middle" fill="#fbbf24">wait ≥ 1</text>
+<text x="515" y="120" text-anchor="middle" fill="#86efac">signal 3</text>
+<rect x="600" y="170" width="130" height="56" rx="6" fill="#1e2433" stroke="#fbbf24"/>
+<text x="665" y="188" text-anchor="middle" font-weight="700">Frame 3</text>
+<text x="665" y="204" text-anchor="middle" fill="#fbbf24">wait ≥ 2</text>
+<text x="665" y="220" text-anchor="middle" fill="#86efac">signal 4</text>
+</g>
+<path d="M215,68 C215,22 515,22 515,66" fill="none" stroke="#fbbf24" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="365" y="20"text-anchor="middle" fill="#fbbf24" font-size="12">same tray: wait for its old value 1</text>
+<path d="M365,228 C365,274 665,274 665,230" fill="none" stroke="#fbbf24" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="515" y="286"text-anchor="middle" fill="#fbbf24" font-size="12">same tray: wait for its old value 2</text>
+<text x="380" y="318"text-anchor="middle" fill="#fca5a5" font-size="12">✗ Frame 2 waiting for 3 would deadlock: 3 is signalled only after frame 2 itself runs</text>
+</svg>
+<figcaption>Each slot remembers the fence value of its last use. Reusing a slot waits for that remembered value. With 2 slots, the wait is for the value from two frames ago.</figcaption>
+</figure>
+
+<figure>
+<svg viewBox="0 0 760 240" role="img" aria-label="Two frames in flight: the CPU records frame N+1 while the GPU runs frame N. Frame 2 starts recording once the GPU has finished frame 0, which shares its slot." font-family="Space Grotesk, Inter, sans-serif">
+<defs>
+<marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/></marker>
+<marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"/></marker>
+</defs>
+<text x="20" y="76" fill="#c7d2fe" font-size="14" font-weight="700">CPU</text>
+<text x="20" y="166" fill="#c7d2fe" font-size="14" font-weight="700">GPU</text>
+<g font-size="13" text-anchor="middle" fill="#e5e7eb">
+<rect x="150" y="50" width="110" height="40" rx="6" fill="#1e2a44" stroke="#60a5fa"/><text x="205" y="75">Record 0</text>
+<rect x="270" y="50" width="110" height="40" rx="6" fill="#2a2140" stroke="#a78bfa"/><text x="325" y="75">Record 1</text>
+<rect x="390" y="50" width="110" height="40" rx="6" fill="#1e2a44" stroke="#60a5fa"/><text x="445" y="75">Record 2</text>
+<rect x="510" y="50" width="110" height="40" rx="6" fill="#2a2140" stroke="#a78bfa"/><text x="565" y="75">Record 3</text>
+<rect x="270" y="140" width="110" height="40" rx="6" fill="#1e2a44" stroke="#60a5fa"/><text x="325" y="165">Run 0</text>
+<rect x="390" y="140" width="110" height="40" rx="6" fill="#2a2140" stroke="#a78bfa"/><text x="445" y="165">Run 1</text>
+<rect x="510" y="140" width="110" height="40" rx="6" fill="#1e2a44" stroke="#60a5fa"/><text x="565" y="165">Run 2</text>
+<rect x="630" y="140" width="110" height="40" rx="6" fill="#2a2140" stroke="#a78bfa"/><text x="685" y="165">Run 3</text>
+</g>
+<g stroke="#9ca3af" stroke-width="1.3" fill="none" marker-end="url(#ah2)">
+<path d="M258,92 L272,138"/><path d="M378,92 L392,138"/><path d="M498,92 L512,138"/><path d="M618,92 L632,138"/>
+</g>
+<text x="265" y="120" fill="#9ca3af" font-size="11" text-anchor="end">submit</text>
+<line x1="385" y1="40" x2="385" y2="192" stroke="#fbbf24" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="150" y="30" fill="#9ca3af" font-size="12"><tspan fill="#60a5fa">■</tspan> slot 0 (tray A)</text>
+<text x="290" y="30" fill="#9ca3af" font-size="12"><tspan fill="#a78bfa">■</tspan> slot 1 (tray B)</text>
+<text x="390" y="215" text-anchor="middle" fill="#fbbf24" font-size="12">Record 2 reuses tray A, so it starts only once Run 0 is done (fence ≥ 1)</text>
+</svg>
+<figcaption>Overlap is the point: while the GPU runs frame N, the CPU is already recording frame N+1, so neither side sits idle.</figcaption>
+</figure>
+
+<h2>5. The swapchain</h2>
+<ul>
+<li>A ring of N back buffers (we use 2, flip model: <code>DXGI_SWAP_EFFECT_FLIP_DISCARD</code>). <code>Present</code> hands the one we drew to the display and advances the ring.</li>
+<li><code>GetCurrentBackBufferIndex()</code> says which buffer to draw into this frame. It is <b>not</b> the same number as the frame-in-flight slot. Keep both indices.</li>
+<li>Each back buffer needs a render target view (RTV) in a descriptor heap. We create the views once and index by back buffer.</li>
+<li>Barrier round trip per frame: <code>PRESENT</code> to <code>RENDER_TARGET</code> before clearing, and back to <code>PRESENT</code> before <code>Present</code> (see B2b).</li>
+<li>The swapchain is created from the <b>queue</b>, not the device. That is how it knows who will be presenting. It also needs the window's HWND, which is why we added <code>GetNativeHandle</code> on <code>Window</code>.</li>
+<li>Resize, tearing and VSync options come later. Shutdown rule: <b>wait for the GPU to go idle</b> (signal, then wait on that value) before releasing anything it uses.</li>
+</ul>
+
+<h2>6. What B2c code will contain</h2>
+<table>
+<tr><th>Step</th><th>Piece</th></tr>
+<tr><td>1</td><td>HWND getter on <code>Window</code> (done)</td></tr>
+<tr><td>2</td><td>Direct command queue</td></tr>
+<tr><td>3</td><td>Fence plus a <code>WaitIdle</code> helper</td></tr>
+<tr><td>4</td><td>Swapchain, 2 back buffers</td></tr>
+<tr><td>5</td><td>RTV heap and one view per back buffer</td></tr>
+<tr><td>6</td><td>Enhanced Barrier helper, then clear and present each frame</td></tr>
+</table>
+<p>B3 then adds the per-slot allocators and the frames-in-flight loop from section 4. B2c can get away with a single allocator and a <code>WaitIdle</code> each frame, which is the "one frame in flight" case.</p>
+
+</main>
+<script>
+(function(){
+var k='janusFontPx',px=16,r=document.documentElement;
+try{px=+localStorage.getItem(k)||16}catch(e){}
+function set(v){px=Math.max(12,Math.min(26,v));r.style.fontSize=px+'px';try{localStorage.setItem(k,px)}catch(e){}}
+set(px);
+document.getElementById('fsm').onclick=function(){set(px-1)};
+document.getElementById('fsp').onclick=function(){set(px+1)};
+})();
+</script>
+</body>
+</html>
