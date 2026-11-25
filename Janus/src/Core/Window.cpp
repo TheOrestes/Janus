@@ -1,7 +1,10 @@
 #include "Core/Window.h"
 #include "Core/Log.h"
 
+#include <windows.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 
 namespace JN
 {
@@ -47,5 +50,11 @@ namespace JN
     GLFWwindow* Window::GetHandle() const
     {
         return m_pHandle;
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------
+    void* Window::GetNativeHandle() const
+    {
+        return glfwGetWin32Window(m_pHandle);
     }
 }
